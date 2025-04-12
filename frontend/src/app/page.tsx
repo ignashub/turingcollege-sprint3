@@ -14,7 +14,7 @@ import { uploadFile, cleanData, downloadFile } from '@/services/api';
 import { DataInfo, CleaningOptions, CleaningReport } from '@/types';
 import { Tooltip } from 'primereact/tooltip';
 
-const missingValueDescriptions = {
+const missingValueDescriptions: Record<string, string> = {
   none: "Keep empty cells as they are",
   mean: "Fill in empty cells with the average value of the column",
   median: "Fill in empty cells with the middle value of the column",
@@ -22,7 +22,7 @@ const missingValueDescriptions = {
   drop: "Remove any rows that have empty cells in this column"
 };
 
-const outlierDescriptions = {
+const outlierDescriptions: Record<string, string> = {
   none: "Keep all values as they are",
   zscore: "Find unusual values that are way different from most other values. These odd values can mess up your results if left alone.",
   iqr: "Catch values that are too far from the middle chunk of your data (like the really high or really low numbers)"
@@ -161,76 +161,96 @@ export default function Home() {
 
           {dataInfo.column_names.map((column) => (
             <div key={column} className="mb-3">
-              <h3>{column}</h3>
+              <h3 className="mb-2 font-semibold">{column}</h3>
               <div className="grid">
                 <div className="col-6">
-                  <label>Missing Values</label>
-                  <span 
-                    id={`missing-values-${column}`} 
-                    className="p-overlay-badge ml-2"
-                  >
-                    <i className="pi pi-info-circle" style={{ cursor: 'pointer' }}></i>
-                  </span>
-                  <Tooltip target={`#missing-values-${column}`}>
-                    {missingValueDescriptions[cleaningOptions.missing_values[column] || 'none']}
-                  </Tooltip>
-                  <Dropdown
-                    value={cleaningOptions.missing_values[column] || 'none'}
-                    options={[
-                      { label: 'None', value: 'none' },
-                      { label: 'Mean', value: 'mean' },
-                      { label: 'Median', value: 'median' },
-                      { label: 'Mode', value: 'mode' },
-                      { label: 'Drop', value: 'drop' },
-                    ]}
-                    onChange={(e) => setCleaningOptions({
-                      ...cleaningOptions,
-                      missing_values: {
-                        ...cleaningOptions.missing_values,
-                        [column]: e.value,
-                      },
-                    })}
-                  />
+                  <div className="p-4 border-round shadow-2 bg-primary-50 h-full">
+                    <div className="mb-2">
+                      <label className="font-medium block">Missing Values</label>
+                      <span id={`missing-values-${column}`} className="p-overlay-badge ml-2">
+                        <i className="pi pi-info-circle" style={{ cursor: 'pointer' }}></i>
+                      </span>
+                      <Tooltip target={`#missing-values-${column}`} position="right" className="max-w-20rem">
+                        <div className="p-2">
+                          <h5 className="mt-0 mb-2">Missing Values Options:</h5>
+                          <ul className="m-0 p-0 pl-4">
+                            <li className="mb-2"><strong>None</strong>: {missingValueDescriptions.none}</li>
+                            <li className="mb-2"><strong>Mean</strong>: {missingValueDescriptions.mean}</li>
+                            <li className="mb-2"><strong>Median</strong>: {missingValueDescriptions.median}</li>
+                            <li className="mb-2"><strong>Mode</strong>: {missingValueDescriptions.mode}</li>
+                            <li><strong>Drop</strong>: {missingValueDescriptions.drop}</li>
+                          </ul>
+                        </div>
+                      </Tooltip>
+                    </div>
+                    <Dropdown
+                      value={cleaningOptions.missing_values[column] || 'none'}
+                      options={[
+                        { label: 'None', value: 'none' },
+                        { label: 'Mean', value: 'mean' },
+                        { label: 'Median', value: 'median' },
+                        { label: 'Mode', value: 'mode' },
+                        { label: 'Drop', value: 'drop' },
+                      ]}
+                      onChange={(e) => setCleaningOptions({
+                        ...cleaningOptions,
+                        missing_values: {
+                          ...cleaningOptions.missing_values,
+                          [column]: e.value,
+                        },
+                      })}
+                      className="w-full"
+                    />
+                  </div>
                 </div>
                 <div className="col-6">
-                  <label>Outliers</label>
-                  <span 
-                    id={`outliers-${column}`}
-                    className="ml-2"
-                  >
-                    <i className="pi pi-info-circle" style={{ cursor: 'pointer' }}></i>
-                  </span>
-                  <Tooltip target={`#outliers-${column}`}>
-                    {outlierDescriptions[cleaningOptions.outliers[column]?.method || 'none']}
-                  </Tooltip>
-                  <Dropdown
-                    value={cleaningOptions.outliers[column]?.method || 'none'}
-                    options={[
-                      { label: 'None', value: 'none' },
-                      { label: 'Z-Score', value: 'zscore' },
-                      { label: 'IQR', value: 'iqr' },
-                    ]}
-                    onChange={(e) => {
-                      if (e.value === 'none') {
-                        const { [column]: _, ...rest } = cleaningOptions.outliers;
-                        setCleaningOptions({
-                          ...cleaningOptions,
-                          outliers: rest,
-                        });
-                      } else {
-                        setCleaningOptions({
-                          ...cleaningOptions,
-                          outliers: {
-                            ...cleaningOptions.outliers,
-                            [column]: {
-                              method: e.value,
-                              action: 'cap',
+                  <div className="p-4 border-round shadow-2 bg-primary-50 h-full">
+                    <div className="mb-2">
+                      <label className="font-medium block">Outliers</label>
+                      <span id={`outliers-${column}`} className="ml-2">
+                        <i className="pi pi-info-circle" style={{ cursor: 'pointer' }}></i>
+                      </span>
+                      <Tooltip target={`#outliers-${column}`} position="left" className="max-w-20rem">
+                        <div className="p-2">
+                          <h5 className="mt-0 mb-2">Outlier Detection Methods:</h5>
+                          <ul className="m-0 p-0 pl-4">
+                            <li className="mb-2"><strong>None</strong>: {outlierDescriptions.none}</li>
+                            <li className="mb-2"><strong>Z-Score</strong>: {outlierDescriptions.zscore}</li>
+                            <li><strong>IQR</strong>: {outlierDescriptions.iqr}</li>
+                          </ul>
+                        </div>
+                      </Tooltip>
+                    </div>
+                    <Dropdown
+                      value={cleaningOptions.outliers[column]?.method || 'none'}
+                      options={[
+                        { label: 'None', value: 'none' },
+                        { label: 'Z-Score', value: 'zscore' },
+                        { label: 'IQR', value: 'iqr' },
+                      ]}
+                      onChange={(e) => {
+                        if (e.value === 'none') {
+                          const { [column]: _, ...rest } = cleaningOptions.outliers;
+                          setCleaningOptions({
+                            ...cleaningOptions,
+                            outliers: rest,
+                          });
+                        } else {
+                          setCleaningOptions({
+                            ...cleaningOptions,
+                            outliers: {
+                              ...cleaningOptions.outliers,
+                              [column]: {
+                                method: e.value,
+                                action: 'cap',
+                              },
                             },
-                          },
-                        });
-                      }
-                    }}
-                  />
+                          });
+                        }
+                      }}
+                      className="w-full"
+                    />
+                  </div>
                 </div>
               </div>
             </div>
@@ -279,32 +299,75 @@ export default function Home() {
         {dataInfo && (
           <div className="mt-4">
             <div className="flex justify-content-between align-items-center mb-3">
-              <h2 className="text-xl">Dataset Information</h2>
+              <h2 className="text-xl font-bold">Dataset Information</h2>
               <Button
                 label="Clean Data"
                 icon="pi pi-filter"
                 onClick={() => setShowCleaningDialog(true)}
+                className="p-button-primary"
               />
             </div>
             
             <div className="grid">
-              <div className="col-6">
-                <p>Rows: {dataInfo.rows}</p>
-                <p>Columns: {dataInfo.columns}</p>
+              <div className="col-12 md:col-6 lg:col-3">
+                <div className="p-4 border-round shadow-2 bg-primary-50">
+                  <div className="flex align-items-center mb-2">
+                    <i className="pi pi-table text-primary mr-2" style={{ fontSize: '1.5rem' }}></i>
+                    <h3 className="text-lg font-semibold m-0 text-primary">Rows</h3>
+                  </div>
+                  <p className="text-2xl font-bold m-0">{dataInfo.rows}</p>
+                </div>
               </div>
-              <div className="col-6">
-                <p>Missing Values:</p>
-                <ul>
-                  {Object.entries(dataInfo.missing_values).map(([column, count]) => (
-                    <li key={column}>{column}: {count}</li>
-                  ))}
-                </ul>
+              
+              <div className="col-12 md:col-6 lg:col-3">
+                <div className="p-4 border-round shadow-2 bg-primary-50">
+                  <div className="flex align-items-center mb-2">
+                    <i className="pi pi-list text-primary mr-2" style={{ fontSize: '1.5rem' }}></i>
+                    <h3 className="text-lg font-semibold m-0 text-primary">Columns</h3>
+                  </div>
+                  <p className="text-2xl font-bold m-0">{dataInfo.columns}</p>
+                </div>
+              </div>
+              
+              <div className="col-12 lg:col-6">
+                <div className="p-4 border-round shadow-2 bg-primary-50 h-full">
+                  <div className="flex align-items-center mb-2">
+                    <i className="pi pi-exclamation-circle text-primary mr-2" style={{ fontSize: '1.5rem' }}></i>
+                    <h3 className="text-lg font-semibold m-0 text-primary">Missing Values</h3>
+                  </div>
+                  {Object.keys(dataInfo.missing_values).length > 0 ? (
+                    <div className="grid">
+                      {Object.entries(dataInfo.missing_values).map(([column, count]) => (
+                        <div key={column} className="col-6 md:col-4">
+                          <div className="flex align-items-center">
+                            <span className="font-medium">{column}:</span>
+                            <span className="ml-2 px-2 py-1 bg-primary border-round text-white text-sm">{count}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="m-0">No missing values found</p>
+                  )}
+                </div>
               </div>
             </div>
 
-            <DataTable value={data} className="mt-3">
+            <DataTable 
+              value={data} 
+              className="mt-3 shadow-2" 
+              paginator 
+              rows={10} 
+              rowsPerPageOptions={[5, 10, 25, 50]} 
+              tableStyle={{ minWidth: '50rem' }}
+              emptyMessage="No data found"
+              scrollable
+              scrollHeight="400px"
+              resizableColumns
+              columnResizeMode="fit"
+            >
               {dataInfo.column_names.map((column) => (
-                <Column key={column} field={column} header={column} />
+                <Column key={column} field={column} header={column} sortable />
               ))}
             </DataTable>
           </div>
