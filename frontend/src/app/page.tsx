@@ -440,6 +440,37 @@ export default function Home() {
                     Duplicate rows have identical values across all columns. Removing duplicates helps ensure your analysis isn't skewed by repeated data points.
                   </Tooltip>
                   
+                  {/* Duplicate Education and Controls */}
+                  <div className="p-3 bg-primary-100 border-round mb-3">
+                    <div className="flex align-items-center mb-2">
+                      <i className="pi pi-info-circle mr-2 text-primary"></i>
+                      <div className="font-medium">What are duplicates?</div>
+                    </div>
+                    <p className="text-sm m-0">Duplicate entries are exact copies of data rows. They can skew your analysis by giving more weight to certain data points.</p>
+                    
+                    <div className="mt-3 pt-2 border-top-1 border-primary-200">
+                      <div className="flex justify-content-between align-items-center">
+                        <label htmlFor="remove-duplicates" className="font-medium">Remove Duplicates</label>
+                        <InputSwitch
+                          id="remove-duplicates"
+                          checked={cleaningOptions.remove_duplicates}
+                          onChange={(e) => setCleaningOptions(prev => ({
+                            ...prev,
+                            remove_duplicates: e.value
+                          }))}
+                        />
+                      </div>
+                      
+                      <div className="mt-2 flex align-items-center">
+                        {cleaningOptions.remove_duplicates ? (
+                          <Message severity="success" text="Duplicate rows will be removed from your dataset" />
+                        ) : (
+                          <Message severity="info" text="Duplicate rows will be preserved in your dataset" />
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  
                   {cleaningReport?.duplicates_removed !== undefined ? (
                     <div>
                       {cleaningReport?.duplicates_removed > 0 ? (
@@ -449,21 +480,33 @@ export default function Home() {
                           <div className="mt-2 text-sm">
                             {((cleaningReport?.duplicates_removed / (cleaningReport?.original_rows || 1)) * 100).toFixed(1)}% of original dataset
                           </div>
+                          <div className="mt-3 pt-2 border-top-1 border-primary-200">
+                            <div className="flex justify-content-between">
+                              <span>Original rows:</span>
+                              <span className="font-medium">{cleaningReport?.original_rows}</span>
+                            </div>
+                            <div className="flex justify-content-between">
+                              <span>After removing duplicates:</span>
+                              <span className="font-medium">{cleaningReport?.original_rows - (cleaningReport?.duplicates_removed || 0)}</span>
+                            </div>
+                          </div>
                         </div>
                       ) : (
-                        <div className="flex align-items-center justify-content-center h-full">
+                        <div className="flex align-items-center justify-content-center h-full border-round bg-primary-50 p-4">
                           <div className="text-center">
                             <i className="pi pi-check-circle text-primary" style={{ fontSize: '2rem' }}></i>
-                            <p className="mt-2">No duplicate rows were found!</p>
+                            <p className="mt-2 mb-0">No duplicate rows were found!</p>
+                            <p className="text-sm text-600 mt-1">Your dataset has no exact duplicate rows</p>
                           </div>
                         </div>
                       )}
                     </div>
                   ) : (
-                    <div className="flex align-items-center justify-content-center h-full">
+                    <div className="flex align-items-center justify-content-center h-full border-round bg-primary-50 p-4">
                       <div className="text-center">
                         <i className="pi pi-info-circle text-primary" style={{ fontSize: '2rem' }}></i>
-                        <p className="mt-2">Duplicate checking was not performed</p>
+                        <p className="mt-2 mb-0">Duplicate checking not performed yet</p>
+                        <p className="text-sm text-600 mt-1">Clean your data to check for duplicates</p>
                       </div>
                     </div>
                   )}
@@ -492,33 +535,217 @@ export default function Home() {
                       </ul>
                     </div>
                   </Tooltip>
-                  {dataInfo && dataInfo.column_names && dataInfo.column_names
-                    .filter(column => !isNaN(dataInfo.missing_values[column]))
-                    .map(column => (
-                      <div key={column} className="mb-3">
-                        <div className="flex align-items-center justify-content-between mb-2">
-                          <span className="font-medium">{column}</span>
-                          <span className="text-sm text-500">{dataInfo.missing_values[column]} missing</span>
-                        </div>
-                        <div className="p-field w-full" id={`missing-value-${column}`}>
-                          <Dropdown
-                            value={cleaningOptions.missing_values[column]?.method || 'none'}
-                            options={[
-                              { label: 'Do nothing', value: 'none' },
-                              { label: 'Drop rows', value: 'drop' },
-                              { label: 'Fill with mean', value: 'mean' },
-                              { label: 'Fill with median', value: 'median' },
-                              { label: 'Fill with mode', value: 'mode' }
-                            ]}
-                            onChange={e => handleMissingValueOptionChange(column, 'method', e.value)}
-                            className="w-full"
-                          />
-                          <Tooltip target={`#missing-value-${column}`} position="right" showDelay={150}>
-                            {missingValueDescriptions[cleaningOptions.missing_values[column]?.method || 'none']}
-                          </Tooltip>
-                        </div>
+                  
+                  {/* Bulk Actions for Missing Values */}
+                  <div className="p-3 bg-primary-100 border-round mb-3">
+                    <div className="font-medium mb-2">Bulk Actions</div>
+                    <div className="grid">
+                      <div className="col-6">
+                        <Button 
+                          label="All to None" 
+                          icon="pi pi-ban" 
+                          className="p-button-outlined p-button-secondary p-button-sm w-full"
+                          onClick={() => {
+                            if (!dataInfo) return;
+                            const newMissingValues = { ...cleaningOptions.missing_values };
+                            dataInfo.column_names.forEach(column => {
+                              newMissingValues[column] = { method: 'none' };
+                            });
+                            setCleaningOptions(prev => ({
+                              ...prev,
+                              missing_values: newMissingValues
+                            }));
+                          }}
+                        />
                       </div>
-                    ))}
+                      <div className="col-6">
+                        <Dropdown
+                          placeholder="Apply to All"
+                          options={[
+                            { label: 'Mean', value: 'mean' },
+                            { label: 'Median', value: 'median' },
+                            { label: 'Mode', value: 'mode' },
+                            { label: 'Drop', value: 'drop' }
+                          ]}
+                          onChange={e => {
+                            if (!e.value || !dataInfo) return;
+                            const newMissingValues = { ...cleaningOptions.missing_values };
+                            dataInfo.column_names.forEach(column => {
+                              newMissingValues[column] = { method: e.value };
+                            });
+                            setCleaningOptions(prev => ({
+                              ...prev,
+                              missing_values: newMissingValues
+                            }));
+                          }}
+                          className="w-full p-button-sm"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {/* Group columns by type for better organization */}
+                  {dataInfo && dataInfo.column_names && (
+                    <>
+                      {/* ID Fields */}
+                      <div className="mb-3">
+                        <div className="p-2 bg-primary-200 border-round font-bold">Identifier Fields</div>
+                        {dataInfo.column_names
+                          .filter(column => column.toLowerCase().includes('id') || column.toLowerCase().includes('code'))
+                          .map(column => (
+                            <div key={column} className="p-2 border-1 border-primary-200 border-top-none">
+                              <div className="flex align-items-center justify-content-between">
+                                <div className="flex align-items-center">
+                                  <i className="pi pi-key mr-2 text-primary-800" style={{ fontSize: '0.9rem' }}></i>
+                                  <span className="font-medium">{column}</span>
+                                </div>
+                                <span className="text-sm bg-primary-100 px-2 py-1 border-round">{dataInfo.missing_values[column] || 0} missing</span>
+                              </div>
+                              <div className="mt-1 p-field w-full" id={`missing-value-${column}`}>
+                                <Dropdown
+                                  value={cleaningOptions.missing_values[column]?.method || 'none'}
+                                  options={[
+                                    { label: 'Do nothing', value: 'none' },
+                                    { label: 'Drop rows', value: 'drop' }
+                                  ]}
+                                  onChange={e => handleMissingValueOptionChange(column, 'method', e.value)}
+                                  className="w-full"
+                                />
+                                <Tooltip target={`#missing-value-${column}`} position="right" showDelay={150}>
+                                  {missingValueDescriptions[cleaningOptions.missing_values[column]?.method || 'none']}
+                                </Tooltip>
+                              </div>
+                            </div>
+                          ))}
+                      </div>
+                      
+                      {/* Numeric Fields */}
+                      <div className="mb-3">
+                        <div className="p-2 bg-primary-200 border-round font-bold">Numeric Fields</div>
+                        {dataInfo.column_names
+                          .filter(column => 
+                            (column.toLowerCase().includes('age') || 
+                             column.toLowerCase().includes('amount') || 
+                             column.toLowerCase().includes('price') || 
+                             column.toLowerCase().includes('points')) && 
+                            !column.toLowerCase().includes('id'))
+                          .map(column => (
+                            <div key={column} className="p-2 border-1 border-primary-200 border-top-none">
+                              <div className="flex align-items-center justify-content-between">
+                                <div className="flex align-items-center">
+                                  <i className="pi pi-hashtag mr-2 text-primary-800" style={{ fontSize: '0.9rem' }}></i>
+                                  <span className="font-medium">{column}</span>
+                                </div>
+                                <span className="text-sm bg-primary-100 px-2 py-1 border-round">{dataInfo.missing_values[column] || 0} missing</span>
+                              </div>
+                              <div className="mt-1 p-field w-full" id={`missing-value-${column}`}>
+                                <Dropdown
+                                  value={cleaningOptions.missing_values[column]?.method || 'none'}
+                                  options={[
+                                    { label: 'Do nothing', value: 'none' },
+                                    { label: 'Drop rows', value: 'drop' },
+                                    { label: 'Fill with mean', value: 'mean' },
+                                    { label: 'Fill with median', value: 'median' },
+                                    { label: 'Fill with mode', value: 'mode' }
+                                  ]}
+                                  onChange={e => handleMissingValueOptionChange(column, 'method', e.value)}
+                                  className="w-full"
+                                />
+                                <Tooltip target={`#missing-value-${column}`} position="right" showDelay={150}>
+                                  {missingValueDescriptions[cleaningOptions.missing_values[column]?.method || 'none']}
+                                </Tooltip>
+                              </div>
+                              {cleaningOptions.missing_values[column]?.method && 
+                               cleaningOptions.missing_values[column]?.method !== 'none' && 
+                               cleaningOptions.missing_values[column]?.method !== 'drop' && (
+                                <div className="mt-1 p-1 bg-primary-50 border-round text-xs text-600">
+                                  <i className="pi pi-info-circle mr-1"></i>
+                                  {cleaningOptions.missing_values[column]?.method === 'mean' && "Will fill with average value"}
+                                  {cleaningOptions.missing_values[column]?.method === 'median' && "Will fill with middle value"}
+                                  {cleaningOptions.missing_values[column]?.method === 'mode' && "Will fill with most common value"}
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                      </div>
+                      
+                      {/* Date Fields */}
+                      <div className="mb-3">
+                        <div className="p-2 bg-primary-200 border-round font-bold">Date Fields</div>
+                        {dataInfo.column_names
+                          .filter(column => 
+                            column.toLowerCase().includes('date') || 
+                            column.toLowerCase().includes('time'))
+                          .map(column => (
+                            <div key={column} className="p-2 border-1 border-primary-200 border-top-none">
+                              <div className="flex align-items-center justify-content-between">
+                                <div className="flex align-items-center">
+                                  <i className="pi pi-calendar mr-2 text-primary-800" style={{ fontSize: '0.9rem' }}></i>
+                                  <span className="font-medium">{column}</span>
+                                </div>
+                                <span className="text-sm bg-primary-100 px-2 py-1 border-round">{dataInfo.missing_values[column] || 0} missing</span>
+                              </div>
+                              <div className="mt-1 p-field w-full" id={`missing-value-${column}`}>
+                                <Dropdown
+                                  value={cleaningOptions.missing_values[column]?.method || 'none'}
+                                  options={[
+                                    { label: 'Do nothing', value: 'none' },
+                                    { label: 'Drop rows', value: 'drop' },
+                                    { label: 'Fill with mode', value: 'mode' }
+                                  ]}
+                                  onChange={e => handleMissingValueOptionChange(column, 'method', e.value)}
+                                  className="w-full"
+                                />
+                                <Tooltip target={`#missing-value-${column}`} position="right" showDelay={150}>
+                                  {missingValueDescriptions[cleaningOptions.missing_values[column]?.method || 'none']}
+                                </Tooltip>
+                              </div>
+                            </div>
+                          ))}
+                      </div>
+                      
+                      {/* Text/Categorical Fields */}
+                      <div className="mb-3">
+                        <div className="p-2 bg-primary-200 border-round font-bold">Text/Categorical Fields</div>
+                        {dataInfo.column_names
+                          .filter(column => 
+                            !column.toLowerCase().includes('id') && 
+                            !column.toLowerCase().includes('code') &&
+                            !column.toLowerCase().includes('age') && 
+                            !column.toLowerCase().includes('amount') && 
+                            !column.toLowerCase().includes('price') &&
+                            !column.toLowerCase().includes('points') &&
+                            !column.toLowerCase().includes('date') && 
+                            !column.toLowerCase().includes('time'))
+                          .map(column => (
+                            <div key={column} className="p-2 border-1 border-primary-200 border-top-none">
+                              <div className="flex align-items-center justify-content-between">
+                                <div className="flex align-items-center">
+                                  <i className="pi pi-list mr-2 text-primary-800" style={{ fontSize: '0.9rem' }}></i>
+                                  <span className="font-medium">{column}</span>
+                                </div>
+                                <span className="text-sm bg-primary-100 px-2 py-1 border-round">{dataInfo.missing_values[column] || 0} missing</span>
+                              </div>
+                              <div className="mt-1 p-field w-full" id={`missing-value-${column}`}>
+                                <Dropdown
+                                  value={cleaningOptions.missing_values[column]?.method || 'none'}
+                                  options={[
+                                    { label: 'Do nothing', value: 'none' },
+                                    { label: 'Drop rows', value: 'drop' },
+                                    { label: 'Fill with mode', value: 'mode' }
+                                  ]}
+                                  onChange={e => handleMissingValueOptionChange(column, 'method', e.value)}
+                                  className="w-full"
+                                />
+                                <Tooltip target={`#missing-value-${column}`} position="right" showDelay={150}>
+                                  {missingValueDescriptions[cleaningOptions.missing_values[column]?.method || 'none']}
+                                </Tooltip>
+                              </div>
+                            </div>
+                          ))}
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
           
@@ -542,62 +769,184 @@ export default function Home() {
                       </ul>
                     </div>
                   </Tooltip>
-                  {dataInfo && dataInfo.column_names && dataInfo.column_names
-                    .filter(column => !isNaN(dataInfo.missing_values[column]))
-                    .map(column => (
-                      <div key={column} className="mb-3">
-                        <div className="flex align-items-center justify-content-between mb-2">
-                          <div className="field-checkbox mb-0">
-                            <Checkbox
-                              inputId={`outlier-${column}`}
-                              checked={cleaningOptions.outliers[column]?.enabled || false}
-                              onChange={e => handleOutlierOptionChange(column, 'enabled', e.checked)}
-                            />
-                            <label htmlFor={`outlier-${column}`} className="ml-2 font-medium">{column}</label>
-                          </div>
-                        </div>
-                        {cleaningOptions.outliers[column]?.enabled && (
-                          <div className="pl-4 pt-2">
-                            <div className="mb-2">
-                              <label className="block text-sm mb-1">Detection Method</label>
-                              <div className="p-field w-full" id={`outlier-method-${column}`}>
-                                <Dropdown
-                                  value={cleaningOptions.outliers[column]?.method || 'zscore'}
-                                  options={[
-                                    { label: 'Z-Score', value: 'zscore' },
-                                    { label: 'IQR', value: 'iqr' }
-                                  ]}
-                                  onChange={e => handleOutlierOptionChange(column, 'method', e.value)}
-                                  className="w-full"
-                                />
-                                <Tooltip target={`#outlier-method-${column}`} position="right" showDelay={150}>
-                                  {outlierDescriptions[cleaningOptions.outliers[column]?.method || 'zscore']}
-                                </Tooltip>
-                              </div>
-                            </div>
-                            <div className="mb-2">
-                              <label className="block text-sm mb-1">
-                                {cleaningOptions.outliers[column]?.method === 'zscore' ? 'Sensitivity Level' : 'Sensitivity Level'}
-                              </label>
-                              <div className="p-field w-full" id={`outlier-threshold-${column}`}>
-                                <InputNumber
-                                  value={cleaningOptions.outliers[column]?.threshold || 3}
-                                  onChange={e => handleOutlierOptionChange(column, 'threshold', e.value)}
-                                  min={0.1}
-                                  max={10}
-                                  step={0.1}
-                                  showButtons
-                                  className="w-full"
-                                />
-                                <Tooltip target={`#outlier-threshold-${column}`} position="right" showDelay={150}>
-                                  {`Higher values mean fewer outliers will be detected. ${cleaningOptions.outliers[column]?.method === 'zscore' ? 'Typical values are between 2-4' : 'Typical values are between 1.5-3'}`}
-                                </Tooltip>
-                              </div>
-                            </div>
-                          </div>
-                        )}
+                  
+                  {/* Outlier Education */}
+                  <div className="p-3 bg-primary-100 border-round mb-3">
+                    <div className="flex align-items-center mb-2">
+                      <i className="pi pi-info-circle mr-2 text-primary"></i>
+                      <div className="font-medium">What are outliers?</div>
+                    </div>
+                    <p className="text-sm m-0">Outliers are unusual values that differ significantly from other observations. They can skew analysis results and may indicate errors or special cases that need attention.</p>
+                    <div className="flex justify-content-between align-items-center mt-2">
+                      <div className="flex align-items-center">
+                        <i className="pi pi-chart-line mr-1 text-primary-800" style={{ fontSize: '0.8rem' }}></i>
+                        <span className="text-xs">Z-Score: Statistical distance from mean</span>
                       </div>
-                    ))}
+                      <div className="flex align-items-center">
+                        <i className="pi pi-bars mr-1 text-primary-800" style={{ fontSize: '0.8rem' }}></i>
+                        <span className="text-xs">IQR: Based on quartile ranges</span>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {/* Bulk Actions for Outliers */}
+                  <div className="p-3 bg-primary-100 border-round mb-3">
+                    <div className="font-medium mb-2">Bulk Actions</div>
+                    <div className="grid">
+                      <div className="col-6">
+                        <Button 
+                          label="Enable All" 
+                          icon="pi pi-check-square" 
+                          className="p-button-outlined p-button-success p-button-sm w-full"
+                          onClick={() => {
+                            if (!dataInfo) return;
+                            const newOutliers = { ...cleaningOptions.outliers };
+                            dataInfo.column_names
+                              .filter(column => 
+                                column.toLowerCase().includes('age') || 
+                                column.toLowerCase().includes('amount') || 
+                                column.toLowerCase().includes('price') || 
+                                column.toLowerCase().includes('points'))
+                              .forEach(column => {
+                                newOutliers[column] = { 
+                                  ...newOutliers[column],
+                                  enabled: true,
+                                  method: newOutliers[column]?.method || 'zscore',
+                                  threshold: newOutliers[column]?.threshold || 3
+                                };
+                              });
+                            setCleaningOptions(prev => ({
+                              ...prev,
+                              outliers: newOutliers
+                            }));
+                          }}
+                        />
+                      </div>
+                      <div className="col-6">
+                        <Button 
+                          label="Disable All" 
+                          icon="pi pi-ban" 
+                          className="p-button-outlined p-button-danger p-button-sm w-full"
+                          onClick={() => {
+                            if (!dataInfo) return;
+                            const newOutliers = { ...cleaningOptions.outliers };
+                            dataInfo.column_names.forEach(column => {
+                              newOutliers[column] = { 
+                                ...newOutliers[column],
+                                enabled: false 
+                              };
+                            });
+                            setCleaningOptions(prev => ({
+                              ...prev,
+                              outliers: newOutliers
+                            }));
+                          }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {/* Only show numeric fields for outlier detection since it only makes sense for numbers */}
+                  {dataInfo && dataInfo.column_names && (
+                    <div className="mb-3">
+                      <div className="p-2 bg-primary-200 border-round font-bold">Numeric Fields</div>
+                      {dataInfo.column_names
+                        .filter(column => 
+                          (column.toLowerCase().includes('age') || 
+                           column.toLowerCase().includes('amount') || 
+                           column.toLowerCase().includes('price') || 
+                           column.toLowerCase().includes('points')) && 
+                          !column.toLowerCase().includes('id'))
+                        .map(column => (
+                          <div key={column} className="p-2 border-1 border-primary-200 border-top-none">
+                            <div className="flex align-items-center justify-content-between mb-1">
+                              <div className="field-checkbox mb-0">
+                                <Checkbox
+                                  inputId={`outlier-${column}`}
+                                  checked={cleaningOptions.outliers[column]?.enabled || false}
+                                  onChange={e => handleOutlierOptionChange(column, 'enabled', e.checked)}
+                                />
+                                <label htmlFor={`outlier-${column}`} className="ml-2 font-medium">
+                                  <i className="pi pi-hashtag mr-1 text-primary-800" style={{ fontSize: '0.9rem' }}></i>
+                                  {column}
+                                </label>
+                              </div>
+                              <span className="text-xs bg-primary-300 px-1 py-1 border-round">Numeric</span>
+                            </div>
+                            {cleaningOptions.outliers[column]?.enabled && (
+                              <div className="pl-4 pt-2 border-left-2 border-primary-300">
+                                <div className="mb-2">
+                                  <div className="flex justify-content-between align-items-center">
+                                    <label className="block text-sm mb-1">Detection Method</label>
+                                    <div className="p-tag p-tag-info p-tag-rounded text-xs">
+                                      {cleaningOptions.outliers[column]?.method === 'zscore' ? 
+                                        <span>Statistical</span> : 
+                                        <span>Range-based</span>
+                                      }
+                                    </div>
+                                  </div>
+                                  <div className="p-field w-full" id={`outlier-method-${column}`}>
+                                    <Dropdown
+                                      value={cleaningOptions.outliers[column]?.method || 'zscore'}
+                                      options={[
+                                        { label: 'Z-Score (Statistical)', value: 'zscore' },
+                                        { label: 'IQR (Range-based)', value: 'iqr' }
+                                      ]}
+                                      onChange={e => handleOutlierOptionChange(column, 'method', e.value)}
+                                      className="w-full"
+                                    />
+                                    <Tooltip target={`#outlier-method-${column}`} position="right" showDelay={150}>
+                                      {outlierDescriptions[cleaningOptions.outliers[column]?.method || 'zscore']}
+                                    </Tooltip>
+                                  </div>
+                                </div>
+                                <div className="mb-2">
+                                  <div className="flex justify-content-between align-items-center">
+                                    <label className="block text-sm mb-1">
+                                      {cleaningOptions.outliers[column]?.method === 'zscore' ? 'Z-Score Threshold' : 'IQR Multiplier'}
+                                    </label>
+                                    <div className="text-xs bg-primary-50 px-2 py-1 border-round">
+                                      {cleaningOptions.outliers[column]?.threshold || 3}
+                                    </div>
+                                  </div>
+                                  <div className="grid">
+                                    <div className="col-3 text-center pt-1">
+                                      <span className="text-xs">Strict</span>
+                                    </div>
+                                    <div className="col-6">
+                                      <div className="p-field w-full" id={`outlier-threshold-${column}`}>
+                                        <InputNumber
+                                          value={cleaningOptions.outliers[column]?.threshold || 3}
+                                          onChange={e => handleOutlierOptionChange(column, 'threshold', e.value)}
+                                          min={0.1}
+                                          max={10}
+                                          step={0.1}
+                                          showButtons
+                                          className="w-full"
+                                        />
+                                        <Tooltip target={`#outlier-threshold-${column}`} position="right" showDelay={150}>
+                                          {`Higher values mean fewer outliers will be detected. ${cleaningOptions.outliers[column]?.method === 'zscore' ? 'Typical values are between 2-4' : 'Typical values are between 1.5-3'}`}
+                                        </Tooltip>
+                                      </div>
+                                    </div>
+                                    <div className="col-3 text-center pt-1">
+                                      <span className="text-xs">Lenient</span>
+                                    </div>
+                                  </div>
+                                </div>
+                                <div className="p-2 bg-primary-50 border-round text-xs">
+                                  <i className="pi pi-info-circle mr-1 text-primary-700"></i>
+                                  {cleaningOptions.outliers[column]?.method === 'zscore' 
+                                    ? `Values more than ${cleaningOptions.outliers[column]?.threshold || 3} standard deviations from the mean will be removed.` 
+                                    : `Values below Q1-${cleaningOptions.outliers[column]?.threshold || 3}×IQR or above Q3+${cleaningOptions.outliers[column]?.threshold || 3}×IQR will be removed.`
+                                  }
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
