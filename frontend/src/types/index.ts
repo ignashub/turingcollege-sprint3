@@ -8,12 +8,16 @@ export interface DataInfo {
 
 export interface CleaningOptions {
   missing_values: {
-    [key: string]: 'mean' | 'median' | 'mode' | 'drop';
+    [key: string]: {
+      method: 'mean' | 'median' | 'mode' | 'drop' | 'none';
+    };
   };
   outliers: {
     [key: string]: {
       method: 'zscore' | 'iqr';
-      action: 'remove' | 'cap';
+      action?: 'remove' | 'cap';
+      enabled: boolean;
+      threshold?: number;
     };
   };
   remove_duplicates: boolean;
@@ -35,4 +39,5 @@ export interface CleaningReport {
       count: number;
     };
   };
+  human_readable?: string;
 } 

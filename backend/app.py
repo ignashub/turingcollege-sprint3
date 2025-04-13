@@ -9,6 +9,7 @@ import json
 import logging
 from dotenv import load_dotenv
 from utils.data_cleaner import clean_dataset, generate_cleaning_report
+from utils.ai_data_cleaner import ai_clean_dataset, analyze_dataframe, get_ai_cleaning_recommendations
 
 # Load environment variables
 load_dotenv()
@@ -23,9 +24,7 @@ app = Flask(__name__)
 # More permissive CORS configuration for debugging
 CORS(app, resources={
     r"/api/*": {
-        "origins": ["http://localhost:3000", "http://localhost:3001", "http://localhost:3002", 
-                   "http://localhost:3003", "http://localhost:3004", "http://localhost:3005", 
-                   "http://localhost:3006", "http://localhost:3007", "http://localhost:3008"],
+        "origins": ["http://localhost:3000"],
         "methods": ["GET", "POST", "OPTIONS"],
         "allow_headers": ["Content-Type", "Authorization", "X-Requested-With"],
         "expose_headers": ["Content-Disposition"],
@@ -101,6 +100,20 @@ def upload_file():
                 'file_name': saved_filename
             }
             
+            # Get AI analysis if OpenAI key is configured
+            try:
+                openai_api_key = os.getenv("OPENAI_API_KEY")
+                if openai_api_key and openai_api_key != "empty-string":
+                    # More detailed analysis
+                    df_analysis = analyze_dataframe(df)
+                    data_info['detailed_analysis'] = df_analysis
+                    
+                    # Try to get AI recommendations
+                    ai_recommendations = get_ai_cleaning_recommendations(df)
+                    data_info['ai_recommendations'] = ai_recommendations.dict()
+            except Exception as ai_error:
+                app.logger.warning(f"AI analysis failed, but will continue with basic analysis: {str(ai_error)}")
+            
             app.logger.info(f"File processed successfully: {saved_filename}")
             return jsonify({
                 'message': 'File uploaded successfully',
@@ -120,6 +133,7 @@ def clean_data():
         data = request.json
         filename = data.get('filename')
         cleaning_options = data.get('cleaning_options', {})
+        use_ai = data.get('use_ai', False)
         
         if not filename:
             return jsonify({'error': 'No filename provided'}), 400
@@ -135,8 +149,24 @@ def clean_data():
         else:
             df = pd.read_excel(filepath)
         
-        # Clean the dataset
-        cleaned_df, report = clean_dataset(df, cleaning_options)
+        # Choose cleaning method: AI-based or manual
+        if use_ai:
+            app.logger.info("Using AI-based cleaning")
+            try:
+                # Check if OpenAI API is configured
+                openai_api_key = os.getenv("OPENAI_API_KEY")
+                if not openai_api_key or openai_api_key == "empty-string":
+                    return jsonify({'error': 'OpenAI API key not configured for AI cleaning'}), 400
+                
+                # Clean using AI
+                cleaned_df, report = ai_clean_dataset(df)
+            except Exception as ai_error:
+                app.logger.error(f"AI cleaning failed: {str(ai_error)}")
+                return jsonify({'error': f'AI cleaning failed: {str(ai_error)}'}), 500
+        else:
+            # Clean using manual options
+            app.logger.info("Using manual cleaning with options")
+            cleaned_df, report = clean_dataset(df, cleaning_options)
         
         # Save cleaned dataset
         cleaned_filename = f"cleaned_{filename}"
@@ -147,6 +177,9 @@ def clean_data():
         else:
             cleaned_df.to_excel(cleaned_filepath, index=False)
         
+        # Generate human-readable report in addition to JSON data
+        report['human_readable'] = generate_cleaning_report(report)
+        
         return jsonify({
             'message': 'Data cleaned successfully',
             'report': report,
@@ -154,6 +187,44 @@ def clean_data():
         }), 200
         
     except Exception as e:
+        app.logger.error(f"Error in clean_data: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/ai-recommendations', methods=['POST'])
+def get_ai_recommendations():
+    try:
+        data = request.json
+        filename = data.get('filename')
+        
+        if not filename:
+            return jsonify({'error': 'No filename provided'}), 400
+        
+        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        
+        if not os.path.exists(filepath):
+            return jsonify({'error': 'File not found'}), 404
+        
+        # Check if OpenAI API is configured
+        openai_api_key = os.getenv("OPENAI_API_KEY")
+        if not openai_api_key or openai_api_key == "empty-string":
+            return jsonify({'error': 'OpenAI API key not configured'}), 400
+        
+        # Read the file
+        if filename.endswith('.csv'):
+            df = pd.read_csv(filepath)
+        else:
+            df = pd.read_excel(filepath)
+        
+        # Get AI recommendations
+        recommendations = get_ai_cleaning_recommendations(df)
+        
+        return jsonify({
+            'message': 'AI recommendations generated successfully',
+            'recommendations': recommendations.dict()
+        }), 200
+    
+    except Exception as e:
+        app.logger.error(f"Error getting AI recommendations: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/download/<filename>', methods=['GET'])
@@ -171,14 +242,6 @@ def download_file(filename):
         
     except Exception as e:
         return jsonify({'error': str(e)}), 500
-
-@app.route('/api/test', methods=['GET'])
-def test_connection():
-    return jsonify({
-        'status': 'success',
-        'message': 'Server is running and CORS is configured correctly',
-        'env': os.getenv('FLASK_ENV', 'development')
-    })
 
 if __name__ == '__main__':
     # Log application startup
