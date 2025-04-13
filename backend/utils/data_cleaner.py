@@ -55,10 +55,14 @@ def clean_dataset(df: pd.DataFrame, options: Dict[str, Any]) -> Tuple[pd.DataFra
     for column in cleaned_df.columns:
         if column in options.get('missing_values', {}):
             method = options['missing_values'][column]
+            if isinstance(method, dict):
+                method = method.get('method', 'none')
+            
             if method == 'drop':
                 cleaned_df = cleaned_df.dropna(subset=[column])
-            else:
+            elif method in ['mean', 'median', 'mode']:
                 cleaned_df[column] = handle_missing_values(cleaned_df, column, method)
+            
             report['missing_values_handled'][column] = method
     
     # Remove duplicates if requested
@@ -135,7 +139,10 @@ def generate_cleaning_report(report: Dict[str, Any]) -> str:
         # Group by method for better readability
         method_columns = {}
         for column, method_info in report['missing_values_handled'].items():
-            method = method_info if isinstance(method_info, str) else method_info.get('method', 'none')
+            method = method_info
+            if isinstance(method_info, dict) and 'method' in method_info:
+                method = method_info['method']
+            
             if method not in method_columns:
                 method_columns[method] = []
             method_columns[method].append(column)

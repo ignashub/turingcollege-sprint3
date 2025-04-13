@@ -179,12 +179,21 @@ export default function Home() {
   const handleDataCleaning = async () => {
     setIsCleaningData(true);
     try {
+      // Format the cleaning options to ensure they're compatible with backend
+      const formattedCleaningOptions = {
+        ...cleaningOptions,
+        missing_values: Object.entries(cleaningOptions.missing_values).reduce((acc, [column, options]) => {
+          acc[column] = options.method;
+          return acc;
+        }, {} as Record<string, string>)
+      };
+      
       const response = await fetch(`${API_BASE_URL}/api/clean`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           filename: dataInfo?.file_name,
-          cleaning_options: cleaningOptions,
+          cleaning_options: formattedCleaningOptions,
           use_ai: useAI // Send whether to use AI-based cleaning
         })
       });
