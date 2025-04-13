@@ -3,20 +3,20 @@ import numpy as np
 from sklearn.preprocessing import StandardScaler
 from typing import Dict, Tuple, Any
 
-def detect_outliers(df: pd.DataFrame, column: str, method: str = 'zscore') -> pd.Series:
+def detect_outliers(df: pd.DataFrame, column: str, method: str = 'zscore', threshold: float = 3) -> pd.Series:
     """
     Detect outliers in a column using either Z-score or IQR method.
     Returns a boolean series indicating outliers.
     """
     if method == 'zscore':
         z_scores = np.abs((df[column] - df[column].mean()) / df[column].std())
-        return z_scores > 3
+        return z_scores > threshold
     else:  # IQR method
         Q1 = df[column].quantile(0.25)
         Q3 = df[column].quantile(0.75)
         IQR = Q3 - Q1
-        lower_bound = Q1 - 1.5 * IQR
-        upper_bound = Q3 + 1.5 * IQR
+        lower_bound = Q1 - threshold * IQR
+        upper_bound = Q3 + threshold * IQR
         return (df[column] < lower_bound) | (df[column] > upper_bound)
 
 def handle_missing_values(df: pd.DataFrame, column: str, method: str = 'mean') -> pd.Series:
@@ -69,27 +69,29 @@ def clean_dataset(df: pd.DataFrame, options: Dict[str, Any]) -> Tuple[pd.DataFra
     
     # Handle outliers
     for column in cleaned_df.select_dtypes(include=[np.number]).columns:
-        if column in options.get('outliers', {}):
-            method = options['outliers'][column]['method']
-            action = options['outliers'][column]['action']
+        if column in options.get('outliers', {}) and options['outliers'][column].get('enabled', False):
+            method = options['outliers'][column].get('method', 'zscore')
+            action = options['outliers'][column].get('action', 'remove')  # Default to 'remove' if action not specified
+            threshold = options['outliers'][column].get('threshold', 3)
             
-            outliers = detect_outliers(cleaned_df, column, method)
+            outliers = detect_outliers(cleaned_df, column, method, threshold)
             if action == 'remove':
                 cleaned_df = cleaned_df[~outliers]
             elif action == 'cap':
                 if method == 'zscore':
                     z_scores = np.abs((cleaned_df[column] - cleaned_df[column].mean()) / cleaned_df[column].std())
-                    cleaned_df.loc[z_scores > 3, column] = cleaned_df[column].mean() + 3 * cleaned_df[column].std()
+                    cleaned_df.loc[z_scores > threshold, column] = cleaned_df[column].mean() + threshold * cleaned_df[column].std()
                 else:  # IQR method
                     Q1 = cleaned_df[column].quantile(0.25)
                     Q3 = cleaned_df[column].quantile(0.75)
                     IQR = Q3 - Q1
-                    cleaned_df.loc[cleaned_df[column] < Q1 - 1.5 * IQR, column] = Q1 - 1.5 * IQR
-                    cleaned_df.loc[cleaned_df[column] > Q3 + 1.5 * IQR, column] = Q3 + 1.5 * IQR
+                    cleaned_df.loc[cleaned_df[column] < Q1 - threshold * IQR, column] = Q1 - threshold * IQR
+                    cleaned_df.loc[cleaned_df[column] > Q3 + threshold * IQR, column] = Q3 + threshold * IQR
             
             report['outliers_handled'][column] = {
                 'method': method,
                 'action': action,
+                'threshold': threshold,
                 'count': outliers.sum()
             }
     

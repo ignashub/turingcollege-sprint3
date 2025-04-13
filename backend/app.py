@@ -11,6 +11,42 @@ from dotenv import load_dotenv
 from utils.data_cleaner import clean_dataset, generate_cleaning_report
 from utils.ai_data_cleaner import ai_clean_dataset, analyze_dataframe, get_ai_cleaning_recommendations
 
+# Custom JSON encoder to handle NumPy types and other non-serializable objects
+class NumpyEncoder(json.JSONEncoder):
+    def default(self, obj):
+        # Handle NumPy data types
+        if isinstance(obj, np.integer):
+            return int(obj)
+        if isinstance(obj, np.floating):
+            return float(obj)
+        if isinstance(obj, np.bool_):
+            return bool(obj)
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        
+        # Handle pandas data types
+        if isinstance(obj, pd.Series):
+            return obj.tolist()
+        if isinstance(obj, pd.DataFrame):
+            return obj.to_dict(orient='records')
+        if isinstance(obj, pd.Timestamp):
+            return obj.isoformat()
+        
+        # Handle sets and other iterables
+        if isinstance(obj, set):
+            return list(obj)
+        
+        # Handle objects with a to_dict method (like Pydantic models)
+        if hasattr(obj, 'to_dict') and callable(getattr(obj, 'to_dict')):
+            return obj.to_dict()
+            
+        # Handle objects with a dict method (like Pydantic models)
+        if hasattr(obj, 'dict') and callable(getattr(obj, 'dict')):
+            return obj.dict()
+            
+        # Let the base class default method raise the TypeError
+        return super(NumpyEncoder, self).default(obj)
+
 # Load environment variables
 load_dotenv()
 
@@ -21,6 +57,9 @@ logging.basicConfig(
 )
 
 app = Flask(__name__)
+# Configure Flask to use the custom JSON encoder
+app.json_encoder = NumpyEncoder
+
 # More permissive CORS configuration for debugging
 CORS(app, resources={
     r"/api/*": {
@@ -93,10 +132,10 @@ def upload_file():
             
             # Get basic dataset information
             data_info = {
-                'rows': len(df),
-                'columns': len(df.columns),
+                'rows': int(len(df)),
+                'columns': int(len(df.columns)),
                 'column_names': df.columns.tolist(),
-                'missing_values': df.isnull().sum().to_dict(),
+                'missing_values': {col: int(val) for col, val in df.isnull().sum().to_dict().items()},
                 'file_name': saved_filename
             }
             
@@ -106,19 +145,30 @@ def upload_file():
                 if openai_api_key and openai_api_key != "empty-string":
                     # More detailed analysis
                     df_analysis = analyze_dataframe(df)
-                    data_info['detailed_analysis'] = df_analysis
+                    # Convert df_analysis to JSON-serializable dict
+                    data_info['detailed_analysis'] = json.loads(json.dumps(df_analysis, cls=NumpyEncoder))
                     
                     # Try to get AI recommendations
                     ai_recommendations = get_ai_cleaning_recommendations(df)
-                    data_info['ai_recommendations'] = ai_recommendations.dict()
+                    # Convert Pydantic model to dict and ensure it's JSON-serializable
+                    ai_recommendations_dict = ai_recommendations.dict()
+                    data_info['ai_recommendations'] = json.loads(json.dumps(ai_recommendations_dict, cls=NumpyEncoder))
             except Exception as ai_error:
                 app.logger.warning(f"AI analysis failed, but will continue with basic analysis: {str(ai_error)}")
             
             app.logger.info(f"File processed successfully: {saved_filename}")
-            return jsonify({
-                'message': 'File uploaded successfully',
-                'data_info': data_info
-            }), 200
+            try:
+                return jsonify({
+                    'message': 'File uploaded successfully',
+                    'data_info': data_info
+                }), 200
+            except TypeError as json_error:
+                app.logger.error(f"JSON serialization error: {str(json_error)}")
+                # Convert data_info to a fully serializable format
+                return jsonify({
+                    'message': 'File uploaded successfully',
+                    'data_info': json.loads(json.dumps(data_info, cls=NumpyEncoder))
+                }), 200
         except Exception as e:
             app.logger.error(f"Error processing file: {str(e)}")
             return jsonify({'error': f'Error processing file: {str(e)}'}), 500
@@ -180,11 +230,20 @@ def clean_data():
         # Generate human-readable report in addition to JSON data
         report['human_readable'] = generate_cleaning_report(report)
         
-        return jsonify({
-            'message': 'Data cleaned successfully',
-            'report': report,
-            'cleaned_filename': cleaned_filename
-        }), 200
+        try:
+            return jsonify({
+                'message': 'Data cleaned successfully',
+                'report': report,
+                'cleaned_filename': cleaned_filename
+            }), 200
+        except TypeError as json_error:
+            app.logger.error(f"JSON serialization error in clean_data: {str(json_error)}")
+            # Use our custom JSON encoder to handle all types
+            return jsonify({
+                'message': 'Data cleaned successfully',
+                'report': json.loads(json.dumps(report, cls=NumpyEncoder)),
+                'cleaned_filename': cleaned_filename
+            }), 200
         
     except Exception as e:
         app.logger.error(f"Error in clean_data: {str(e)}")
@@ -217,12 +276,15 @@ def get_ai_recommendations():
         
         # Get AI recommendations
         recommendations = get_ai_cleaning_recommendations(df)
+        # Convert Pydantic model to dict and ensure it's JSON-serializable
+        recommendations_dict = recommendations.dict()
+        serialized_recommendations = json.loads(json.dumps(recommendations_dict, cls=NumpyEncoder))
         
         return jsonify({
             'message': 'AI recommendations generated successfully',
-            'recommendations': recommendations.dict()
+            'recommendations': serialized_recommendations
         }), 200
-    
+            
     except Exception as e:
         app.logger.error(f"Error getting AI recommendations: {str(e)}")
         return jsonify({'error': str(e)}), 500

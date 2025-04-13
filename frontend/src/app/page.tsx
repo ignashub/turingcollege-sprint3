@@ -183,7 +183,7 @@ export default function Home() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          filename: selectedFile?.name,
+          filename: dataInfo?.file_name,
           cleaning_options: cleaningOptions,
           use_ai: useAI // Send whether to use AI-based cleaning
         })
@@ -218,7 +218,7 @@ export default function Home() {
   };
 
   const getAIRecommendations = async () => {
-    if (!selectedFile?.name) {
+    if (!dataInfo) {
       toastRef.current?.show({
         severity: 'error',
         summary: 'Error',
@@ -233,7 +233,7 @@ export default function Home() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          filename: selectedFile?.name
+          filename: dataInfo.file_name
         })
       });
       
