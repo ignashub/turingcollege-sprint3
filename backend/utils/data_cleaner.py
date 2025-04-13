@@ -108,26 +108,82 @@ def generate_cleaning_report(report: Dict[str, Any]) -> str:
     summary = []
     
     # Basic statistics
-    summary.append(f"Dataset cleaning summary:")
-    summary.append(f"- Original size: {report['original_rows']} rows, {report['original_columns']} columns")
-    summary.append(f"- Final size: {report['final_rows']} rows, {report['final_columns']} columns")
+    summary.append("Dataset Cleaning Summary")
+    summary.append(f"• Your dataset started with {report['original_rows']} rows and {report['original_columns']} columns")
+    
+    # Calculate changes
+    rows_diff = report['original_rows'] - report['final_rows']
+    if rows_diff > 0:
+        summary.append(f"• {rows_diff} rows were removed during the cleaning process")
+    elif report['original_rows'] == report['final_rows']:
+        summary.append("• No rows were removed during cleaning")
     
     # Duplicates
     if report['duplicates_removed'] > 0:
-        summary.append(f"- Removed {report['duplicates_removed']} duplicate rows")
+        summary.append(f"• Removed {report['duplicates_removed']} duplicate rows to improve data quality")
     
     # Missing values
     missing_before = sum(report['missing_values_before'].values())
     missing_after = sum(report['missing_values_after'].values())
+    
     if missing_before > 0:
-        summary.append(f"- Handled {missing_before - missing_after} missing values")
-        for column, method in report['missing_values_handled'].items():
-            summary.append(f"  * {column}: {method}")
+        if missing_before - missing_after > 0:
+            summary.append(f"• Successfully handled {missing_before - missing_after} out of {missing_before} missing values")
+        else:
+            summary.append(f"• Your dataset had {missing_before} missing values")
+        
+        # Group by method for better readability
+        method_columns = {}
+        for column, method_info in report['missing_values_handled'].items():
+            method = method_info if isinstance(method_info, str) else method_info.get('method', 'none')
+            if method not in method_columns:
+                method_columns[method] = []
+            method_columns[method].append(column)
+        
+        # Add better descriptions for methods
+        method_descriptions = {
+            'none': 'Left as is',
+            'mean': 'Filled with average values',
+            'median': 'Filled with median values',
+            'mode': 'Filled with most common values',
+            'drop': 'Rows with missing values were removed'
+        }
+        
+        for method, columns in method_columns.items():
+            if method == 'none':
+                if len(columns) < 5:  # Only show individual columns if there aren't too many
+                    summary.append(f"  • {method_descriptions.get(method, method)}: {', '.join(columns)}")
+                else:
+                    summary.append(f"  • {method_descriptions.get(method, method)}: {len(columns)} columns")
+            else:
+                summary.append(f"  • {method_descriptions.get(method, method)}: {', '.join(columns)}")
     
     # Outliers
     if report['outliers_handled']:
-        summary.append("- Outlier handling:")
-        for column, info in report['outliers_handled'].items():
-            summary.append(f"  * {column}: {info['count']} outliers {info['action']} using {info['method']} method")
+        outlier_count = sum(info['count'] for info in report['outliers_handled'].values() if isinstance(info, dict) and 'count' in info)
+        if outlier_count > 0:
+            summary.append(f"• Detected and handled {outlier_count} outliers across {len(report['outliers_handled'])} columns")
+            
+            # Group by method and action
+            method_action_columns = {}
+            for column, info in report['outliers_handled'].items():
+                if isinstance(info, dict):
+                    key = (info.get('method', 'none'), info.get('action', 'none'))
+                    if key not in method_action_columns:
+                        method_action_columns[key] = []
+                    if info.get('count', 0) > 0:
+                        method_action_columns[key].append(f"{column} ({info.get('count', 0)} outliers)")
+            
+            # Better descriptions
+            action_descriptions = {
+                'remove': 'removed from dataset',
+                'cap': 'capped at normal range'
+            }
+            
+            for (method, action), columns in method_action_columns.items():
+                if columns:  # Only include if there were actually outliers
+                    summary.append(f"  • Using {method} method: {action_descriptions.get(action, action)}: {', '.join(columns)}")
+    
+    summary.append(f"• Final dataset has {report['final_rows']} rows and {report['final_columns']} columns")
     
     return "\n".join(summary) 

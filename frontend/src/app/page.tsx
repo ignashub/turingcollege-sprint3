@@ -22,26 +22,26 @@ import { Divider } from 'primereact/divider';
 import { TabView, TabPanel } from 'primereact/tabview';
 
 const missingValueDescriptions: Record<string, string> = {
-  none: "Keep empty cells as they are",
-  mean: "Fill empty cells with the average value",
-  median: "Fill empty cells with the middle value",
-  mode: "Fill empty cells with the most common value",
-  drop: "Remove rows with empty cells"
+  none: "Keep empty cells as they are without making any changes",
+  mean: "Fill empty cells with the average value of all other values in that column. Best for numerical data with a normal distribution.",
+  median: "Fill empty cells with the middle value when all values are sorted. Good for numerical data with outliers.",
+  mode: "Fill empty cells with the most frequently occurring value in that column. Suitable for both numerical and categorical data.",
+  drop: "Remove rows containing empty cells. Use when missing data makes the entire row unreliable."
 };
 
 const outlierDescriptions: Record<string, string> = {
-  none: "Keep all values as they are",
-  zscore: "Find unusual values based on how far they are from the average",
-  iqr: "Find unusual values that fall outside the middle range of your data"
+  none: "Keep all values as they are without detecting or removing outliers",
+  zscore: "Detect unusual values based on how many standard deviations they are from the mean. Values beyond the threshold are considered outliers.",
+  iqr: "Detect unusual values using the Interquartile Range method. Values below Q1-(threshold×IQR) or above Q3+(threshold×IQR) are considered outliers."
 };
 
 const dataCleaningDescription = "Data cleaning helps improve your data quality by removing errors, duplicates, and handling missing values. Clean data leads to more accurate analysis results!";
 
 const duplicatesDescription = "Duplicate entries are exact copies of the same data. Removing them helps prevent skewed analysis results.";
 
-const missingValuesDescription = "Missing values are empty cells in your data. You can either fill them with calculated values or remove the rows with missing data.";
+const missingValuesDescription = "Missing values are empty cells in your data. They can affect analysis results if not handled properly. Choose a method below to deal with them.";
 
-const outliersDescription = "Outliers are unusual values that don't follow the pattern of the rest of your data. They can distort your analysis results if not handled properly.";
+const outliersDescription = "Outliers are extreme values that differ significantly from other observations. They can skew your analysis results if not addressed.";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -429,31 +429,44 @@ export default function Home() {
             <div className="grid">
               <div className="col-12 md:col-4">
                 <div className="p-4 border-round shadow-2 bg-primary-50 h-full">
-                  <h3 className="mt-0 mb-3">
+                  <h3 className="mt-0 mb-3 flex align-items-center">
+                    <i className="pi pi-copy text-primary mr-2"></i>
                     Duplicates
                     <span id="duplicates-info" className="ml-2">
-                      <i className="pi pi-info-circle" style={{ cursor: 'pointer' }}></i>
+                      <i className="pi pi-info-circle" style={{ cursor: 'pointer', fontSize: '0.8rem' }}></i>
                     </span>
                   </h3>
                   <Tooltip target="#duplicates-info" position="right" showDelay={150}>
-                    {duplicatesDescription}
+                    Duplicate rows have identical values across all columns. Removing duplicates helps ensure your analysis isn't skewed by repeated data points.
                   </Tooltip>
-                  <div className="field-checkbox mb-0">
-                    <Checkbox
-                      inputId="removeDuplicates"
-                      checked={cleaningOptions.remove_duplicates}
-                      onChange={e => setCleaningOptions({
-                        ...cleaningOptions,
-                        remove_duplicates: e.checked || false
-                      })}
-                    />
-                    <label htmlFor="removeDuplicates" className="ml-2">
-                      Remove duplicate rows
-                    </label>
-                  </div>
-                  <Tooltip target="#remove-duplicates-info" position="right" showDelay={150}>
-                    {duplicatesDescription}
-                  </Tooltip>
+                  
+                  {cleaningReport?.duplicates_removed !== undefined ? (
+                    <div>
+                      {cleaningReport?.duplicates_removed > 0 ? (
+                        <div className="text-center p-3 border-round bg-primary-100">
+                          <div className="mb-2 font-medium">Duplicates Removed</div>
+                          <div className="text-2xl font-bold text-primary">{cleaningReport?.duplicates_removed}</div>
+                          <div className="mt-2 text-sm">
+                            {((cleaningReport?.duplicates_removed / (cleaningReport?.original_rows || 1)) * 100).toFixed(1)}% of original dataset
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex align-items-center justify-content-center h-full">
+                          <div className="text-center">
+                            <i className="pi pi-check-circle text-primary" style={{ fontSize: '2rem' }}></i>
+                            <p className="mt-2">No duplicate rows were found!</p>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="flex align-items-center justify-content-center h-full">
+                      <div className="text-center">
+                        <i className="pi pi-info-circle text-primary" style={{ fontSize: '2rem' }}></i>
+                        <p className="mt-2">Duplicate checking was not performed</p>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
           
@@ -461,8 +474,9 @@ export default function Home() {
                 <div className="p-4 border-round shadow-2 bg-primary-50 h-full">
                   <h3 className="mt-0 mb-3">
                     Missing Values
-                    <span id="missing-values-header-info" className="ml-2">
-                      <i className="pi pi-info-circle" style={{ cursor: 'pointer' }}></i>
+                    <span className="ml-2 p-overlay-badge" data-pr-tooltip="Missing Values" data-pr-position="right" data-pr-at="right+5 top">
+                      <i className="pi pi-info-circle" style={{ fontSize: '0.75rem', color: 'var(--primary-color)' }}></i>
+                      <Tooltip target=".p-overlay-badge" content={missingValuesDescription} />
                     </span>
                   </h3>
                   <Tooltip target="#missing-values-header-info" position="right" showDelay={150}>
@@ -512,8 +526,9 @@ export default function Home() {
                 <div className="p-4 border-round shadow-2 bg-primary-50 h-full">
                   <h3 className="mt-0 mb-3">
                     Outliers
-                    <span id="outliers-header-info" className="ml-2">
-                      <i className="pi pi-info-circle" style={{ cursor: 'pointer' }}></i>
+                    <span className="ml-2 p-overlay-badge" data-pr-tooltip="Outliers" data-pr-position="right" data-pr-at="right+5 top">
+                      <i className="pi pi-info-circle" style={{ fontSize: '0.75rem', color: 'var(--primary-color)' }}></i>
+                      <Tooltip target=".p-overlay-badge" content={outliersDescription} />
                     </span>
                   </h3>
                   <Tooltip target="#outliers-header-info" position="right" showDelay={150}>
@@ -690,8 +705,17 @@ export default function Home() {
           <div>
             {cleaningReport.human_readable && (
               <div className="p-4 border-round shadow-2 bg-primary-50 mb-4">
-                <h3 className="mt-0 mb-3">Summary</h3>
-                <p className="whitespace-pre-line">{cleaningReport.human_readable}</p>
+                <h3 className="mt-0 mb-3 text-primary">
+                  <i className="pi pi-check-circle mr-2"></i>
+                  Cleaning Results
+                </h3>
+                <div className="whitespace-pre-line text-lg">
+                  {cleaningReport.human_readable.split('\n').map((line, index) => (
+                    <p key={index} className={`mb-2 ${line.startsWith('Dataset') ? 'text-xl font-bold text-primary' : ''}`}>
+                      {line}
+                    </p>
+                  ))}
+                </div>
               </div>
             )}
             
@@ -723,7 +747,8 @@ export default function Home() {
               
               <div className="col-12 md:col-4">
                 <div className="p-4 border-round shadow-2 bg-primary-50 h-full">
-                  <h3 className="mt-0 mb-3">
+                  <h3 className="mt-0 mb-3 flex align-items-center">
+                    <i className="pi pi-ban text-primary mr-2"></i>
                     Missing Values
                     <span id="missing-values-info" className="ml-2">
                       <i className="pi pi-info-circle" style={{ cursor: 'pointer', fontSize: '0.8rem' }}></i>
@@ -732,25 +757,61 @@ export default function Home() {
                   <Tooltip target="#missing-values-info" position="right" showDelay={150}>
                     {missingValuesDescription}
                   </Tooltip>
-                  {cleaningReport.missing_values_handled && Object.entries(cleaningReport.missing_values_handled).map(([column, details]) => (
-                    <div key={column} className="mb-3">
-                      <div className="text-lg font-medium mb-2">{column}</div>
-                      <div className="flex justify-content-between align-items-center mb-1">
-                        <span>Count:</span>
-                        <span className="font-bold">{typeof details === 'string' ? 0 : (details as any).count}</span>
+                  
+                  {cleaningReport.missing_values_handled && 
+                    Object.entries(cleaningReport.missing_values_handled).length > 0 ? (
+                      <div>
+                        <div className="grid">
+                          {Object.entries(cleaningReport.missing_values_handled)
+                            .filter(([_, details]) => typeof details === 'object' ? (details as any).method !== 'none' : details !== 'none')
+                            .map(([column, details]) => (
+                              <div key={column} className="col-12 mb-3 border-bottom-1 border-primary-100 pb-2">
+                                <div className="font-medium text-primary mb-2">{column}</div>
+                                <div className="flex justify-content-between align-items-center mb-1 text-sm">
+                                  <span>Method:</span>
+                                  <span className="font-bold bg-primary-100 px-2 py-1 border-round">
+                                    {typeof details === 'string' ? details : (details as any).method}
+                                  </span>
+                                </div>
+                                {typeof details === 'object' && (details as any).count > 0 && (
+                                  <div className="flex justify-content-between align-items-center text-sm">
+                                    <span>Values Fixed:</span>
+                                    <span className="font-bold">{(details as any).count}</span>
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                        </div>
+                        
+                        {Object.entries(cleaningReport.missing_values_handled)
+                          .filter(([_, details]) => typeof details === 'object' ? (details as any).method === 'none' : details === 'none')
+                          .length > 0 && (
+                            <div className="mt-3 p-2 bg-primary-100 border-round">
+                              <p className="m-0 text-sm">
+                                <i className="pi pi-info-circle mr-1 text-primary"></i>
+                                {Object.entries(cleaningReport.missing_values_handled)
+                                  .filter(([_, details]) => typeof details === 'object' ? (details as any).method === 'none' : details === 'none')
+                                  .length} columns with missing values were left unchanged.
+                              </p>
+                            </div>
+                          )}
                       </div>
-                      <div className="flex justify-content-between align-items-center">
-                        <span>Method:</span>
-                        <span className="font-bold">{typeof details === 'string' ? details : (details as any).method}</span>
+                    ) : (
+                      <div className="flex align-items-center justify-content-center h-full">
+                        <div className="text-center">
+                          <i className="pi pi-check-circle text-primary" style={{ fontSize: '2rem' }}></i>
+                          <p className="mt-2">No missing values needed handling!</p>
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    )
+                  }
                 </div>
               </div>
               
               <div className="col-12 md:col-4">
                 <div className="p-4 border-round shadow-2 bg-primary-50 h-full">
-                  <h3 className="mt-0 mb-3">
+                  <h3 className="mt-0 mb-3 flex align-items-center">
+                    <i className="pi pi-exclamation-triangle text-primary mr-2"></i>
                     Outliers
                     <span id="outliers-info" className="ml-2">
                       <i className="pi pi-info-circle" style={{ cursor: 'pointer', fontSize: '0.8rem' }}></i>
@@ -759,25 +820,77 @@ export default function Home() {
                   <Tooltip target="#outliers-info" position="right" showDelay={150}>
                     {outliersDescription}
                   </Tooltip>
-                  {cleaningReport.outliers_handled && Object.entries(cleaningReport.outliers_handled).map(([column, details]) => (
-                    <div key={column} className="mb-3">
-                      <div className="text-lg font-medium mb-2">{column}</div>
-                      <div className="flex justify-content-between align-items-center mb-1">
-                        <span>Detected:</span>
-                        <span className="font-bold">{typeof details === 'string' ? 0 : (details as any).count}</span>
+                  
+                  {cleaningReport.outliers_handled && 
+                    Object.entries(cleaningReport.outliers_handled).length > 0 ? (
+                      <div>
+                        {Object.entries(cleaningReport.outliers_handled)
+                          .filter(([_, details]) => 
+                            typeof details === 'object' && 
+                            (details as any).count > 0)
+                          .map(([column, details]) => (
+                            <div key={column} className="mb-3 border-bottom-1 border-primary-100 pb-2">
+                              <div className="font-medium text-primary mb-2">{column}</div>
+                              <div className="grid">
+                                <div className="col-6">
+                                  <div className="text-sm font-bold">Detected:</div>
+                                  <div className="text-lg">{typeof details === 'string' ? 0 : (details as any).count}</div>
+                                </div>
+                                <div className="col-6">
+                                  <div className="text-sm font-bold">Method:</div>
+                                  <div className="bg-primary-100 px-2 py-1 border-round text-center">
+                                    {typeof details === 'string' ? details : (details as any).method}
+                                  </div>
+                                </div>
+                                <div className="col-12 mt-2">
+                                  <div className="text-sm font-bold">Action:</div>
+                                  <div className="text-sm">
+                                    {typeof details === 'object' && (details as any).action === 'remove' 
+                                      ? 'Removed from dataset' 
+                                      : 'Capped at normal range'}
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        
+                        {Object.entries(cleaningReport.outliers_handled)
+                          .filter(([_, details]) => 
+                            typeof details === 'object' && 
+                            (details as any).count === 0)
+                          .length > 0 && (
+                            <div className="mt-3 p-2 bg-primary-100 border-round">
+                              <p className="m-0 text-sm">
+                                <i className="pi pi-info-circle mr-1 text-primary"></i>
+                                No outliers were found in {
+                                  Object.entries(cleaningReport.outliers_handled)
+                                    .filter(([_, details]) => 
+                                      typeof details === 'object' && 
+                                      (details as any).count === 0)
+                                    .length
+                                } columns that were checked.
+                              </p>
+                            </div>
+                          )}
+                        
+                        {Object.entries(cleaningReport.outliers_handled).length === 0 && (
+                          <div className="flex align-items-center justify-content-center h-full">
+                            <div className="text-center">
+                              <i className="pi pi-check-circle text-primary" style={{ fontSize: '2rem' }}></i>
+                              <p className="mt-2">No outlier detection was performed!</p>
+                            </div>
+                          </div>
+                        )}
                       </div>
-                      <div className="flex justify-content-between align-items-center mb-1">
-                        <span>Method:</span>
-                        <span className="font-bold">{typeof details === 'string' ? details : (details as any).method}</span>
+                    ) : (
+                      <div className="flex align-items-center justify-content-center h-full">
+                        <div className="text-center">
+                          <i className="pi pi-check-circle text-primary" style={{ fontSize: '2rem' }}></i>
+                          <p className="mt-2">No outlier handling was needed!</p>
+                        </div>
                       </div>
-                      <div className="flex justify-content-between align-items-center">
-                        <span>Threshold:</span>
-                        <span className="font-bold">
-                          {typeof details === 'object' && 'threshold' in details ? (details as any).threshold : 'N/A'}
-                        </span>
-                      </div>
-                    </div>
-                  ))}
+                    )
+                  }
                 </div>
               </div>
             </div>
