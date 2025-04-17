@@ -1,10 +1,10 @@
 # Data Cleaning Web Application
 
-A full-stack web application for automated data cleaning and analysis, built with Next.js, Flask, and PrimeReact.
+A full-stack web application for automated data cleaning and analysis, built with Next.js, Flask, LangChain, and PrimeReact.
 
 ## Project Structure
 
-```
+```bash
 .
 ├── frontend/           # Next.js frontend application
 │   ├── src/           # Source files
@@ -15,6 +15,7 @@ A full-stack web application for automated data cleaning and analysis, built wit
     ├── app.py         # Main Flask application
     ├── requirements.txt # Python dependencies
     └── utils/         # Utility functions
+        └── ai_data_cleaner.py # LangChain agentic data cleaning
 ```
 
 ## Features
@@ -24,9 +25,28 @@ A full-stack web application for automated data cleaning and analysis, built wit
   - Missing value detection and handling
   - Outlier detection
   - Duplicate removal
+- **LangChain Agentic Data Cleaning**
+  - AI-driven data analysis and cleaning recommendations
+  - Domain-specific cleaning strategies (e.g., e-commerce rules)
+  - Intelligent value transformations based on data types
+  - Comprehensive cleaning audit logs
 - Interactive data table view
 - Download cleaned datasets
 - Data cleaning summary reports
+
+## Agentic Data Cleaning
+
+This application leverages LangChain and OpenAI's GPT models to create an intelligent data cleaning agent that can:
+
+1. **Analyze datasets**: The agent examines the data structure, identifies patterns, and detects potential issues
+2. **Generate recommendations**: Based on analysis, the agent suggests appropriate cleaning strategies
+3. **Domain awareness**: Recognizes domain-specific datasets (e.g., e-commerce) and applies specialized rules
+4. **Automated execution**: Implements cleaning operations with human-readable explanations
+5. **Decision tracking**: Maintains an audit log of all operations performed on the data
+
+The agentic components are primarily implemented in the backend using:
+- `backend/app.py`: Initializes and runs the LangChain agent
+- `backend/utils/ai_data_cleaner.py`: Contains the core AI data cleaning logic
 
 ## Setup Instructions
 
@@ -65,7 +85,12 @@ A full-stack web application for automated data cleaning and analysis, built wit
    pip install -r requirements.txt
    ```
 
-4. Start the Flask server:
+4. Set up OpenAI API key:
+   ```bash
+   export OPENAI_API_KEY=your_api_key_here  # On Windows: set OPENAI_API_KEY=your_api_key_here
+   ```
+
+5. Start the Flask server:
    ```bash
    python app.py
    ```
@@ -82,7 +107,8 @@ A full-stack web application for automated data cleaning and analysis, built wit
   - Flask
   - Pandas
   - Openpyxl
-  - LangChain (optional)
+  - LangChain (for agentic data cleaning)
+  - OpenAI API (for GPT model integration)
 
 ## Security Considerations
 
@@ -90,3 +116,4 @@ A full-stack web application for automated data cleaning and analysis, built wit
 - Size limits
 - File type verification
 - Error handling 
+- API key protection 

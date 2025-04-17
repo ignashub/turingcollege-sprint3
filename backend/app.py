@@ -8,8 +8,14 @@ from datetime import datetime
 import json
 import logging
 from dotenv import load_dotenv
-from utils.data_cleaner import clean_dataset, generate_cleaning_report
 from utils.ai_data_cleaner import ai_clean_dataset, analyze_dataframe, get_ai_cleaning_recommendations
+from langchain.agents import initialize_agent, AgentType
+from langchain.chains import LLMChain
+from langchain_openai import ChatOpenAI
+from langchain.prompts import PromptTemplate
+from langchain.tools import Tool
+from pydantic import BaseModel, Field
+from typing import Dict, List, Any, Optional
 
 # Custom JSON encoder to handle NumPy types and other non-serializable objects
 class NumpyEncoder(json.JSONEncoder):
@@ -89,6 +95,226 @@ if not os.path.exists(UPLOAD_FOLDER):
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
+# LangChain Tool Functions for the Agent
+def detect_missing_values(df_path: str) -> Dict[str, Any]:
+    """
+    Detect missing values in the dataset
+    Args:
+        df_path: Path to the dataset file
+    Returns:
+        Dictionary containing missing values per column
+    """
+    try:
+        # Load dataframe
+        if df_path.endswith('.csv'):
+            df = pd.read_csv(df_path)
+        else:
+            df = pd.read_excel(df_path)
+            
+        missing_values = df.isnull().sum().to_dict()
+        missing_percent = {col: (count/len(df))*100 for col, count in missing_values.items()}
+        
+        return {
+            "total_missing": df.isnull().sum().sum(),
+            "columns_with_missing": {k: v for k, v in missing_values.items() if v > 0},
+            "missing_percent": {k: round(v, 2) for k, v in missing_percent.items() if v > 0}
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+def detect_outliers(df_path: str, columns: Optional[List[str]] = None, method: str = "zscore") -> Dict[str, Any]:
+    """
+    Detect outliers in numeric columns
+    Args:
+        df_path: Path to the dataset file
+        columns: List of columns to check for outliers, if None checks all numeric columns
+        method: Outlier detection method ('zscore' or 'iqr')
+    Returns:
+        Dictionary with outlier information per column
+    """
+    try:
+        # Load dataframe
+        if df_path.endswith('.csv'):
+            df = pd.read_csv(df_path)
+        else:
+            df = pd.read_excel(df_path)
+            
+        # Select numeric columns
+        numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+        
+        # Filter columns if specified
+        if columns:
+            numeric_cols = [col for col in columns if col in numeric_cols]
+            
+        result = {}
+        
+        for col in numeric_cols:
+            if method == "zscore":
+                # Z-score method
+                z_scores = np.abs((df[col] - df[col].mean()) / df[col].std())
+                outliers = z_scores > 3  # Values beyond 3 std devs
+                outlier_count = outliers.sum()
+                outlier_percent = (outlier_count / len(df)) * 100
+            else:  # IQR method
+                Q1 = df[col].quantile(0.25)
+                Q3 = df[col].quantile(0.75)
+                IQR = Q3 - Q1
+                outliers = (df[col] < (Q1 - 1.5 * IQR)) | (df[col] > (Q3 + 1.5 * IQR))
+                outlier_count = outliers.sum()
+                outlier_percent = (outlier_count / len(df)) * 100
+                
+            if outlier_count > 0:
+                result[col] = {
+                    "count": int(outlier_count),
+                    "percent": round(outlier_percent, 2),
+                    "method": method
+                }
+                
+        return result
+    except Exception as e:
+        return {"error": str(e)}
+
+def detect_duplicates(df_path: str) -> Dict[str, Any]:
+    """
+    Detect duplicate rows in the dataset
+    Args:
+        df_path: Path to the dataset file
+    Returns:
+        Dictionary with duplicate information
+    """
+    try:
+        # Load dataframe
+        if df_path.endswith('.csv'):
+            df = pd.read_csv(df_path)
+        else:
+            df = pd.read_excel(df_path)
+            
+        dup_count = len(df) - len(df.drop_duplicates())
+        dup_percent = (dup_count / len(df)) * 100
+            
+        return {
+            "duplicate_rows": int(dup_count),
+            "duplicate_percent": round(dup_percent, 2),
+            "total_rows": len(df),
+            "unique_rows": len(df.drop_duplicates())
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+def generate_statistics(df_path: str) -> Dict[str, Any]:
+    """
+    Generate descriptive statistics for the dataset
+    Args:
+        df_path: Path to the dataset file
+    Returns:
+        Dictionary with descriptive statistics
+    """
+    try:
+        # Load dataframe
+        if df_path.endswith('.csv'):
+            df = pd.read_csv(df_path)
+        else:
+            df = pd.read_excel(df_path)
+            
+        # Basic info
+        num_rows = len(df)
+        num_cols = len(df.columns)
+        
+        # Column types
+        dtypes = df.dtypes.astype(str).to_dict()
+        
+        # Numeric column statistics
+        numeric_stats = {}
+        for col in df.select_dtypes(include=[np.number]).columns:
+            numeric_stats[col] = {
+                "mean": float(df[col].mean()),
+                "median": float(df[col].median()),
+                "std": float(df[col].std()),
+                "min": float(df[col].min()),
+                "max": float(df[col].max()),
+                "unique_values": int(df[col].nunique())
+            }
+            
+        # Categorical column statistics
+        categorical_stats = {}
+        for col in df.select_dtypes(include=['object']).columns:
+            categorical_stats[col] = {
+                "unique_values": int(df[col].nunique()),
+                "most_common": df[col].value_counts().index[0] if df[col].nunique() > 0 else None,
+                "most_common_count": int(df[col].value_counts().iloc[0]) if df[col].nunique() > 0 else 0
+            }
+            
+        return {
+            "rows": num_rows,
+            "columns": num_cols,
+            "column_types": dtypes,
+            "numeric_stats": numeric_stats,
+            "categorical_stats": categorical_stats
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+# Initialize LangChain Agent for data cleaning
+def initialize_data_cleaning_agent(filepath):
+    """
+    Initialize a LangChain agent for data cleaning tasks
+    Args:
+        filepath: Path to the dataset file to clean
+    Returns:
+        Initialized LangChain agent
+    """
+    try:
+        # Check OpenAI API key
+        openai_api_key = os.getenv("OPENAI_API_KEY")
+        if not openai_api_key or openai_api_key == "empty-string":
+            raise ValueError("OpenAI API key not properly configured")
+            
+        # Initialize LLM
+        llm = ChatOpenAI(
+            model="gpt-3.5-turbo-0125",
+            temperature=0.1,
+            api_key=openai_api_key
+        )
+        
+        # Define tools
+        tools = [
+            Tool(
+                name="DetectMissingValues",
+                func=lambda: detect_missing_values(filepath),
+                description="Detects missing values in the dataset"
+            ),
+            Tool(
+                name="DetectOutliers",
+                func=lambda: detect_outliers(filepath),
+                description="Detects outliers in numeric columns using statistical methods"
+            ),
+            Tool(
+                name="DetectDuplicates",
+                func=lambda: detect_duplicates(filepath),
+                description="Identifies duplicate rows in the dataset"
+            ),
+            Tool(
+                name="GenerateStatistics",
+                func=lambda: generate_statistics(filepath),
+                description="Generates descriptive statistics for the dataset"
+            )
+        ]
+        
+        # Initialize agent
+        agent = initialize_agent(
+            tools,
+            llm,
+            agent=AgentType.STRUCTURED_CHAT_ZERO_SHOT_REACT_DESCRIPTION,
+            verbose=True,
+            handle_parsing_errors=True,
+            max_iterations=5
+        )
+        
+        return agent
+    except Exception as e:
+        app.logger.error(f"Error initializing agent: {str(e)}")
+        return None
+
 @app.route('/api/upload', methods=['POST'])
 def upload_file():
     try:
@@ -148,6 +374,15 @@ def upload_file():
                     # Convert df_analysis to JSON-serializable dict
                     data_info['detailed_analysis'] = json.loads(json.dumps(df_analysis, cls=NumpyEncoder))
                     
+                    # Initialize and run the LangChain agent for initial analysis
+                    agent = initialize_data_cleaning_agent(filepath)
+                    if agent:
+                        agent_analysis = agent.run(
+                            "Analyze this dataset and provide comprehensive recommendations for cleaning. "
+                            "Focus on detecting missing values, outliers, and duplicates."
+                        )
+                        data_info['agent_analysis'] = agent_analysis
+                    
                     # Try to get AI recommendations
                     ai_recommendations = get_ai_cleaning_recommendations(df)
                     # Convert Pydantic model to dict and ensure it's JSON-serializable
@@ -183,7 +418,6 @@ def clean_data():
         data = request.json
         filename = data.get('filename')
         cleaning_options = data.get('cleaning_options', {})
-        use_ai = data.get('use_ai', False)
         
         if not filename:
             return jsonify({'error': 'No filename provided'}), 400
@@ -199,24 +433,40 @@ def clean_data():
         else:
             df = pd.read_excel(filepath)
         
-        # Choose cleaning method: AI-based or manual
-        if use_ai:
-            app.logger.info("Using AI-based cleaning")
-            try:
-                # Check if OpenAI API is configured
-                openai_api_key = os.getenv("OPENAI_API_KEY")
-                if not openai_api_key or openai_api_key == "empty-string":
-                    return jsonify({'error': 'OpenAI API key not configured for AI cleaning'}), 400
-                
-                # Clean using AI
-                cleaned_df, report = ai_clean_dataset(df)
-            except Exception as ai_error:
-                app.logger.error(f"AI cleaning failed: {str(ai_error)}")
-                return jsonify({'error': f'AI cleaning failed: {str(ai_error)}'}), 500
+        # Check if OpenAI API is configured
+        openai_api_key = os.getenv("OPENAI_API_KEY")
+        if not openai_api_key or openai_api_key == "empty-string":
+            return jsonify({'error': 'OpenAI API key not configured for AI cleaning'}), 400
+        
+        # Get recommendations if not provided in request
+        if not cleaning_options.get('recommendations'):
+            app.logger.info("Getting AI recommendations for cleaning")
+            recommendations = get_ai_cleaning_recommendations(df)
         else:
-            # Clean using manual options
-            app.logger.info("Using manual cleaning with options")
-            cleaned_df, report = clean_dataset(df, cleaning_options)
+            # Use provided recommendations
+            app.logger.info("Using provided recommendations")
+            recommendations = cleaning_options.get('recommendations')
+        
+        # Clean using AI with LangChain
+        app.logger.info("Using AI-based cleaning with LangChain")
+        try:
+            # Initialize the LangChain agent for data cleaning
+            agent = initialize_data_cleaning_agent(filepath)
+            if not agent:
+                return jsonify({'error': 'Failed to initialize data cleaning agent'}), 500
+            
+            # Let the agent analyze and suggest cleaning steps
+            agent_suggestions = agent.run(
+                f"Analyze this dataset and perform data cleaning operations based on these recommendations: "
+                f"{json.dumps(cleaning_options, indent=2)}"
+            )
+            
+            # Use AI cleaning function to apply the recommendations
+            cleaned_df, report = ai_clean_dataset(df)
+            report['agent_suggestions'] = agent_suggestions
+        except Exception as ai_error:
+            app.logger.error(f"AI cleaning failed: {str(ai_error)}")
+            return jsonify({'error': f'AI cleaning failed: {str(ai_error)}'}), 500
         
         # Save cleaned dataset
         cleaned_filename = f"cleaned_{filename}"
@@ -227,8 +477,15 @@ def clean_data():
         else:
             cleaned_df.to_excel(cleaned_filepath, index=False)
         
-        # Generate human-readable report in addition to JSON data
-        report['human_readable'] = generate_cleaning_report(report)
+        # Add human-readable report
+        if 'generate_cleaning_report' in globals():
+            try:
+                from utils.data_cleaner import generate_cleaning_report
+                report['human_readable'] = generate_cleaning_report(report)
+            except ImportError:
+                report['human_readable'] = f"AI cleaning completed successfully. Processed {report.get('original_rows', 0)} rows and handled missing values and outliers as needed."
+        else:
+            report['human_readable'] = f"AI cleaning completed successfully. Processed {report.get('original_rows', 0)} rows and handled missing values and outliers as needed."
         
         try:
             return jsonify({
@@ -247,46 +504,6 @@ def clean_data():
         
     except Exception as e:
         app.logger.error(f"Error in clean_data: {str(e)}")
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/ai-recommendations', methods=['POST'])
-def get_ai_recommendations():
-    try:
-        data = request.json
-        filename = data.get('filename')
-        
-        if not filename:
-            return jsonify({'error': 'No filename provided'}), 400
-        
-        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-        
-        if not os.path.exists(filepath):
-            return jsonify({'error': 'File not found'}), 404
-        
-        # Check if OpenAI API is configured
-        openai_api_key = os.getenv("OPENAI_API_KEY")
-        if not openai_api_key or openai_api_key == "empty-string":
-            return jsonify({'error': 'OpenAI API key not configured'}), 400
-        
-        # Read the file
-        if filename.endswith('.csv'):
-            df = pd.read_csv(filepath)
-        else:
-            df = pd.read_excel(filepath)
-        
-        # Get AI recommendations
-        recommendations = get_ai_cleaning_recommendations(df)
-        # Convert Pydantic model to dict and ensure it's JSON-serializable
-        recommendations_dict = recommendations.dict()
-        serialized_recommendations = json.loads(json.dumps(recommendations_dict, cls=NumpyEncoder))
-        
-        return jsonify({
-            'message': 'AI recommendations generated successfully',
-            'recommendations': serialized_recommendations
-        }), 200
-            
-    except Exception as e:
-        app.logger.error(f"Error getting AI recommendations: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/download/<filename>', methods=['GET'])

@@ -4,6 +4,8 @@ export interface DataInfo {
   column_names: string[];
   missing_values: { [key: string]: number };
   file_name: string;
+  agent_analysis?: string;
+  ai_recommendations?: any;
 }
 
 export interface CleaningOptions {
@@ -21,6 +23,15 @@ export interface CleaningOptions {
     };
   };
   remove_duplicates: boolean;
+  get_recommendations_only?: boolean;
+}
+
+export interface AuditLogEntry {
+  timestamp: string;
+  operation: string;
+  column?: string;
+  details: { [key: string]: any };
+  rows_affected?: number;
 }
 
 export interface CleaningReport {
@@ -40,4 +51,17 @@ export interface CleaningReport {
     };
   };
   human_readable?: string;
+  agent_suggestions?: string;
+  audit_log?: AuditLogEntry[];
+  ai_recommendations?: any;
+  is_ecommerce_dataset?: boolean;
+}
+
+export interface AIRecommendation {
+  explanation?: string;
+  general_advice?: string;
+  overall_advice?: string;
+  should_remove_duplicates?: boolean;
+  duplicate_removal?: boolean;
+  column_recommendations: Record<string, any>;
 } 

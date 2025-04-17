@@ -20,6 +20,8 @@ import { Message } from 'primereact/message';
 import { Card } from 'primereact/card';
 import { Divider } from 'primereact/divider';
 import { TabView, TabPanel } from 'primereact/tabview';
+import axios from 'axios';
+import { API_BASE_URL } from '@/services/api';
 
 const missingValueDescriptions: Record<string, string> = {
   none: "Keep empty cells as they are without making any changes",
@@ -42,8 +44,6 @@ const duplicatesDescription = "Duplicate entries are exact copies of the same da
 const missingValuesDescription = "Missing values are empty cells in your data. They can affect analysis results if not handled properly. Choose a method below to deal with them.";
 
 const outliersDescription = "Outliers are extreme values that differ significantly from other observations. They can skew your analysis results if not addressed.";
-
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 // Define better types for AI recommendations
 type ColumnRecommendation = {
@@ -76,7 +76,7 @@ export default function Home() {
   const [aiRecommendations, setAIRecommendations] = useState<AIRecommendation | null>(null);
   const [loadingRecommendations, setLoadingRecommendations] = useState(false);
   const [showReportDialog, setShowReportDialog] = useState(false);
-  const [cleanedFilename, setCleanedFilename] = useState('');
+  const [cleanedFilename, setCleanedFilename] = useState<string | null>('');
   const [isCleaningData, setIsCleaningData] = useState(false);
   const toastRef = useRef<Toast>(null);
 
@@ -99,44 +99,63 @@ export default function Home() {
     }
   }, [dataInfo]);
 
-  const handleFileUpload = async (event: any) => {
+  const handleUploadFile = async (file: File) => {
     try {
       setLoading(true);
-      const file = event.files[0];
+      
+      // Upload file to backend
+      const response = await uploadFile(file);
+      
+      // Update file info state
       setSelectedFile(file);
-      const dataInfo = await uploadFile(file);
-      setDataInfo(dataInfo);
       
-      // Read the file to display in the table
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const text = e.target?.result as string;
-        const rows = text.split('\n').map(row => row.split(','));
-        const headers = rows[0];
-        const data = rows.slice(1).map(row => {
-          const obj: any = {};
-          headers.forEach((header, index) => {
-            obj[header] = row[index];
-          });
-          return obj;
-        });
-        setData(data);
-      };
-      reader.readAsText(file);
+      // Set data info for cleaned file
+      setDataInfo(response.data_info);
       
-      toastRef.current?.show({
-        severity: 'success',
-        summary: 'Success',
-        detail: 'File uploaded successfully',
-      });
-    } catch (error) {
-      toastRef.current?.show({
-        severity: 'error',
-        summary: 'Error',
-        detail: 'Failed to upload file',
-      });
-    } finally {
       setLoading(false);
+      
+      // Show toast for successful upload
+      toastRef.current?.show({
+        severity: 'success', 
+        summary: 'File Uploaded', 
+        detail: `${file.name} has been uploaded and analyzed.`,
+        life: 3000
+      });
+      
+      // Reset states for a new file upload
+      setCleaningReport(null);
+      setCleanedFilename(null);
+      setAIRecommendations(null);
+      
+      // Initialize cleaning options with default values
+      const newMissingValues: CleaningOptions['missing_values'] = {};
+      
+      if (response.data_info.column_names) {
+        response.data_info.column_names.forEach((column: string) => {
+          newMissingValues[column] = { method: 'none' };
+        });
+      }
+      
+      setCleaningOptions({
+        missing_values: newMissingValues,
+        outliers: {},
+        remove_duplicates: true
+      });
+      
+      // Show cleaning dialog
+      setShowCleaningDialog(true);
+      
+      console.log('Data info:', response.data_info);
+      
+    } catch (error) {
+      setLoading(false);
+      console.error('Error uploading file:', error);
+      
+      toastRef.current?.show({
+        severity: 'error', 
+        summary: 'Upload Failed', 
+        detail: 'Failed to upload and analyze the file.'
+      });
     }
   };
 
@@ -177,52 +196,55 @@ export default function Home() {
   };
 
   const handleDataCleaning = async () => {
-    setIsCleaningData(true);
-    try {
-      // Format the cleaning options to ensure they're compatible with backend
-      const formattedCleaningOptions = {
-        ...cleaningOptions,
-        missing_values: Object.entries(cleaningOptions.missing_values).reduce((acc, [column, options]) => {
-          acc[column] = options.method;
-          return acc;
-        }, {} as Record<string, string>)
-      };
-      
-      const response = await fetch(`${API_BASE_URL}/api/clean`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          filename: dataInfo?.file_name,
-          cleaning_options: formattedCleaningOptions,
-          use_ai: useAI // Send whether to use AI-based cleaning
-        })
+    if (!selectedFile) {
+      toastRef.current?.show({
+        severity: 'error',
+        summary: 'Error',
+        detail: 'Please upload a file first'
       });
+      return;
+    }
+    
+    try {
+      setIsCleaningData(true);
       
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to clean data');
+      // Get the filename from dataInfo
+      const filename = dataInfo?.file_name;
+      
+      if (!filename) {
+        throw new Error('Filename not found');
       }
       
-      const data = await response.json();
-      setCleaningReport(data.report);
-      setCleanedFilename(data.cleaned_filename);
-      toastRef.current?.show({ 
-        severity: 'success', 
-        summary: 'Success', 
-        detail: 'Data cleaned successfully!' 
+      // Send cleaned data request to backend with LangChain agent mode
+      const response = await axios.post(`${API_BASE_URL}/clean`, {
+        filename: filename,
+        cleaning_options: {
+          use_agent: true,
+          get_recommendations_only: false
+        }
       });
       
-      // Show reports dialog
+      // Handle successful response
+      const data = response.data;
+      setCleaningReport(data.report);
+      setCleanedFilename(data.cleaned_filename);
       setShowReportDialog(true);
+      
+      toastRef.current?.show({
+        severity: 'success',
+        summary: 'Success',
+        detail: 'Data cleaning completed successfully'
+      });
     } catch (error: any) {
       console.error('Error cleaning data:', error);
-      toastRef.current?.show({ 
-        severity: 'error', 
-        summary: 'Error', 
-        detail: error.message || 'Failed to clean data' 
+      toastRef.current?.show({
+        severity: 'error',
+        summary: 'Error',
+        detail: error.response?.data?.error || 'Failed to clean data'
       });
     } finally {
       setIsCleaningData(false);
+      setShowCleaningDialog(false);
     }
   };
 
@@ -237,12 +259,20 @@ export default function Home() {
     }
     
     setLoadingRecommendations(true);
+    toastRef.current?.show({
+      severity: 'info',
+      summary: 'AI Analysis Started',
+      detail: 'Our AI agent is analyzing your data. This may take a moment...'
+    });
+    
     try {
-      const response = await fetch(`${API_BASE_URL}/api/ai-recommendations`, {
+      // Now using the clean endpoint with empty cleaning options to let the agent analyze the data
+      const response = await fetch(`${API_BASE_URL}/api/clean`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          filename: dataInfo.file_name
+          filename: dataInfo.file_name,
+          cleaning_options: { get_recommendations_only: true } // Just analyze, don't clean yet
         })
       });
       
@@ -252,54 +282,73 @@ export default function Home() {
       }
       
       const data = await response.json();
-      setAIRecommendations(data.recommendations);
       
-      // Apply AI recommendations to the cleaning options
-      if (data.recommendations && data.recommendations.column_recommendations) {
-        const newCleaningOptions = { ...cleaningOptions };
+      // Extract recommendations from the report
+      if (data.report && data.report.ai_recommendations) {
+        setAIRecommendations(data.report.ai_recommendations);
         
-        // Update missing values options based on AI recommendations
-        if (newCleaningOptions.missing_values) {
-          Object.keys(data.recommendations.column_recommendations).forEach(column => {
-            const columnRec = data.recommendations.column_recommendations[column];
-            if (columnRec.missing_value_strategy) {
+        // Apply AI recommendations to the cleaning options
+        if (data.report.ai_recommendations.column_recommendations) {
+          const newCleaningOptions = { ...cleaningOptions };
+          
+          // Update missing values options based on AI recommendations
+          if (newCleaningOptions.missing_values) {
+            Object.entries(data.report.ai_recommendations.column_recommendations).forEach(([column, columnRec]: [string, any]) => {
               if (!newCleaningOptions.missing_values[column]) {
                 newCleaningOptions.missing_values[column] = { method: 'none' };
               }
-              newCleaningOptions.missing_values[column].method = columnRec.missing_value_strategy;
-            }
-          });
-        }
-        
-        // Update outlier detection options based on AI recommendations
-        if (newCleaningOptions.outliers) {
-          Object.keys(data.recommendations.column_recommendations).forEach(column => {
-            const columnRec = data.recommendations.column_recommendations[column];
-            if (columnRec.outlier_strategy) {
+              
+              if (columnRec.missing_values && columnRec.missing_values.method) {
+                const method = columnRec.missing_values.method;
+                newCleaningOptions.missing_values[column].method = 
+                  (method === 'mean' || method === 'median' || method === 'mode' || 
+                   method === 'drop' || method === 'none') 
+                    ? method : 'none';
+              }
+            });
+          }
+          
+          // Update outlier detection options based on AI recommendations
+          if (newCleaningOptions.outliers) {
+            Object.entries(data.report.ai_recommendations.column_recommendations).forEach(([column, columnRec]: [string, any]) => {
               if (!newCleaningOptions.outliers[column]) {
                 newCleaningOptions.outliers[column] = { method: 'zscore', enabled: false, threshold: 3 };
               }
-              // Only update if there's an explicit recommendation
-              if (columnRec.outlier_strategy !== 'none') {
+              
+              if (columnRec.outliers && columnRec.outliers.method && columnRec.outliers.method !== 'none') {
                 newCleaningOptions.outliers[column].method = 
-                  columnRec.outlier_strategy === 'remove' ? 'zscore' : columnRec.outlier_strategy;
+                  (columnRec.outliers.method === 'zscore' || columnRec.outliers.method === 'iqr') 
+                    ? columnRec.outliers.method as 'zscore' | 'iqr'
+                    : 'zscore';
                 newCleaningOptions.outliers[column].enabled = true;
               }
-            }
+            });
+          }
+          
+          // Update duplicates option if recommended
+          if (data.report.ai_recommendations.duplicate_removal !== undefined) {
+            newCleaningOptions.remove_duplicates = data.report.ai_recommendations.duplicate_removal;
+          }
+          
+          setCleaningOptions(newCleaningOptions);
+        }
+        
+        // Show domain-specific message if detected
+        if (data.report.is_ecommerce_dataset) {
+          toastRef.current?.show({
+            severity: 'info',
+            summary: 'E-commerce Data Detected',
+            detail: 'Our AI has detected this is e-commerce data and provided specialized recommendations.'
           });
         }
         
-        // Update duplicates option if recommended
-        if (data.recommendations.should_remove_duplicates !== undefined) {
-          newCleaningOptions.remove_duplicates = data.recommendations.should_remove_duplicates;
-        }
-        
-        setCleaningOptions(newCleaningOptions);
         toastRef.current?.show({
-          severity: 'info',
-          summary: 'AI Recommendations Applied',
-          detail: 'The cleaning options have been updated with AI recommendations'
+          severity: 'success',
+          summary: 'AI Analysis Complete',
+          detail: 'AI has analyzed your data and made recommendations for cleaning.'
         });
+      } else {
+        throw new Error('No recommendations received from AI');
       }
       
     } catch (error: any) {
@@ -354,7 +403,7 @@ export default function Home() {
             <Tooltip target="#data-cleaning-info" position="right" showDelay={150}>
               <div className="p-2" style={{ maxWidth: '300px' }}>
                 <p className="m-0">{dataCleaningDescription}</p>
-                <p className="mt-2 mb-0">Choose from AI-powered automatic cleaning or set up your own cleaning rules below.</p>
+                <p className="mt-2 mb-0">Our AI agent will analyze your dataset and apply intelligent cleaning strategies tailored to your dataset.</p>
               </div>
             </Tooltip>
           </>
@@ -371,8 +420,8 @@ export default function Home() {
               className="p-button-danger" 
             />
             <Button 
-              label={useAI ? "Clean with AI" : "Clean Data"} 
-              icon={useAI ? "pi pi-cog" : "pi pi-check"} 
+              label="Clean Data with LangChain Agent" 
+              icon="pi pi-bolt" 
               onClick={handleDataCleaning} 
               loading={isCleaningData} 
               className="p-button-primary" 
@@ -380,663 +429,91 @@ export default function Home() {
           </div>
         }
       >
-        <div className="p-4 border-round shadow-2 bg-primary-50 mb-3">
-          <div className="flex align-items-center justify-content-between">
-            <div>
-              <h3 className="m-0">AI-Powered Cleaning</h3>
-              <p className="text-sm text-600 mt-1 mb-2">Let AI analyze your data and suggest the best cleaning options automatically</p>
+        <div className="p-4 border-round shadow-2 bg-primary-50 mb-4">
+          <div className="flex align-items-center mb-3">
+            <i className="pi pi-bolt text-primary mr-2" style={{ fontSize: '1.5rem' }}></i>
+            <h3 className="m-0">LangChain Agentic Data Cleaning</h3>
+          </div>
+          <p>Our intelligent agent uses LangChain to analyze your dataset and apply the most appropriate cleaning strategies.</p>
+          
+          <div className="grid mt-4">
+            <div className="col-12 md:col-6 lg:col-3">
+              <Card className="h-full shadow-1">
+                <div className="flex align-items-center mb-3">
+                  <i className="pi pi-ban text-blue-500 mr-2" style={{ fontSize: '1.2rem' }}></i>
+                  <h4 className="m-0">Missing Values</h4>
+                </div>
+                <p className="text-sm">Detects and handles missing values using statistical methods best suited for your data type.</p>
+                <div className="p-2 bg-blue-50 border-round text-sm mt-2">
+                  Includes mean, median, mode imputation and intelligent row removal.
+                </div>
+              </Card>
             </div>
-            <div className="flex align-items-center gap-3">
-              <span className="mr-2">AI Mode: {useAI ? 'On' : 'Off'}</span>
-              <InputSwitch 
-                checked={useAI} 
-                onChange={(e) => setUseAI(e.value)} 
-                disabled={loadingRecommendations || isCleaningData}
-              />
-              <Button 
-                label="Get AI Suggestions" 
-                icon="pi pi-bolt" 
-                className="p-button-outlined p-button-info"
-                onClick={getAIRecommendations}
-                loading={loadingRecommendations}
-                disabled={isCleaningData || !selectedFile?.name}
-              />
+            
+            <div className="col-12 md:col-6 lg:col-3">
+              <Card className="h-full shadow-1">
+                <div className="flex align-items-center mb-3">
+                  <i className="pi pi-exclamation-triangle text-orange-500 mr-2" style={{ fontSize: '1.2rem' }}></i>
+                  <h4 className="m-0">Outliers</h4>
+                </div>
+                <p className="text-sm">Identifies and handles outliers using Z-score and IQR methods with appropriate thresholds.</p>
+                <div className="p-2 bg-orange-50 border-round text-sm mt-2">
+                  Can remove or cap outliers based on data characteristics.
+                </div>
+              </Card>
+            </div>
+            
+            <div className="col-12 md:col-6 lg:col-3">
+              <Card className="h-full shadow-1">
+                <div className="flex align-items-center mb-3">
+                  <i className="pi pi-copy text-green-500 mr-2" style={{ fontSize: '1.2rem' }}></i>
+                  <h4 className="m-0">Duplicates</h4>
+                </div>
+                <p className="text-sm">Detects and removes duplicate rows to ensure data integrity and accuracy.</p>
+                <div className="p-2 bg-green-50 border-round text-sm mt-2">
+                  Preserves original data while eliminating redundancy.
+                </div>
+              </Card>
+            </div>
+            
+            <div className="col-12 md:col-6 lg:col-3">
+              <Card className="h-full shadow-1">
+                <div className="flex align-items-center mb-3">
+                  <i className="pi pi-shopping-cart text-purple-500 mr-2" style={{ fontSize: '1.2rem' }}></i>
+                  <h4 className="m-0">Domain Intelligence</h4>
+                </div>
+                <p className="text-sm">Applies specialized rules for e-commerce datasets with price, quantity and transaction data.</p>
+                <div className="p-2 bg-purple-50 border-round text-sm mt-2">
+                  Automatically detects your domain and applies relevant rules.
+                </div>
+              </Card>
             </div>
           </div>
           
-          {aiRecommendations && (
-            <div className="mt-3 p-3 border-1 border-300 border-round bg-white">
-              <h4 className="mt-0 mb-2">AI Analysis:</h4>
-              <p className="m-0 text-sm">{aiRecommendations.explanation}</p>
-              {aiRecommendations.general_advice && (
-                <div className="mt-2">
-                  <h5 className="mt-0 mb-1">General Advice:</h5>
-                  <p className="m-0 text-sm">{aiRecommendations.general_advice}</p>
-                </div>
-              )}
-            </div>
-          )}
+          <div className="mt-4 p-3 border-round bg-white">
+            <h4 className="mt-0 mb-2">Agentic Cleaning Process:</h4>
+            <ol className="m-0 pl-4">
+              <li className="mb-2">The LangChain agent will analyze your dataset structure</li>
+              <li className="mb-2">Domain-specific patterns will be detected and appropriate rules applied</li>
+              <li className="mb-2">Missing values, outliers, and duplicates will be handled with optimal strategies</li>
+              <li className="mb-2">Data types will be transformed and validated as needed</li>
+              <li>A comprehensive audit log will track all changes made to your data</li>
+            </ol>
+          </div>
         </div>
         
-        <TabView className="mt-3" activeIndex={useAI ? 1 : 0} onTabChange={(e) => setUseAI(e.index === 1)}>
-          <TabPanel header="Set up Cleaning Manually">
-            <div className="flex align-items-center mb-3">
-              <h3 className="m-0">
-                Manual Configuration
-                <span id="manual-config-info" className="ml-2">
-                  <i className="pi pi-info-circle" style={{ cursor: 'pointer' }}></i>
-                </span>
-              </h3>
-              <Tooltip target="#manual-config-info" position="right" showDelay={150}>
-                <div className="p-2" style={{ maxWidth: '300px' }}>
-                  <p className="m-0">Configure your own cleaning options for more control over how your data is processed.</p>
-                  <p className="mt-2 mb-0">Click the information icons for guidance on each option.</p>
-                </div>
-              </Tooltip>
-            </div>
-            
-            <div className="grid">
-              <div className="col-12 md:col-4">
-                <div className="p-4 border-round shadow-2 bg-primary-50 h-full">
-                  <h3 className="mt-0 mb-3 flex align-items-center">
-                    <i className="pi pi-copy text-primary mr-2"></i>
-                    Duplicates
-                    <span id="duplicates-info" className="ml-2">
-                      <i className="pi pi-info-circle" style={{ cursor: 'pointer', fontSize: '0.8rem' }}></i>
-                    </span>
-                  </h3>
-                  <Tooltip target="#duplicates-info" position="right" showDelay={150}>
-                    Duplicate rows have identical values across all columns. Removing duplicates helps ensure your analysis isn't skewed by repeated data points.
-                  </Tooltip>
-                  
-                  {/* Duplicate Education and Controls */}
-                  <div className="p-3 bg-primary-100 border-round mb-3">
-                    <div className="flex align-items-center mb-2">
-                      <i className="pi pi-info-circle mr-2 text-primary"></i>
-                      <div className="font-medium">What are duplicates?</div>
-                    </div>
-                    <p className="text-sm m-0">Duplicate entries are exact copies of data rows. They can skew your analysis by giving more weight to certain data points.</p>
-                    
-                    <div className="mt-3 pt-2 border-top-1 border-primary-200">
-                      <div className="flex justify-content-between align-items-center">
-                        <label htmlFor="remove-duplicates" className="font-medium">Remove Duplicates</label>
-                        <InputSwitch
-                          id="remove-duplicates"
-                          checked={cleaningOptions.remove_duplicates}
-                          onChange={(e) => setCleaningOptions(prev => ({
-                            ...prev,
-                            remove_duplicates: e.value
-                          }))}
-                        />
-                      </div>
-                      
-                      <div className="mt-2 flex align-items-center">
-                        {cleaningOptions.remove_duplicates ? (
-                          <Message severity="success" text="Duplicate rows will be removed from your dataset" />
-                        ) : (
-                          <Message severity="info" text="Duplicate rows will be preserved in your dataset" />
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                  
-                  {cleaningReport?.duplicates_removed !== undefined ? (
-                    <div>
-                      {cleaningReport?.duplicates_removed > 0 ? (
-                        <div className="text-center p-3 border-round bg-primary-100">
-                          <div className="mb-2 font-medium">Duplicates Removed</div>
-                          <div className="text-2xl font-bold text-primary">{cleaningReport?.duplicates_removed}</div>
-                          <div className="mt-2 text-sm">
-                            {((cleaningReport?.duplicates_removed / (cleaningReport?.original_rows || 1)) * 100).toFixed(1)}% of original dataset
-                          </div>
-                          <div className="mt-3 pt-2 border-top-1 border-primary-200">
-                            <div className="flex justify-content-between">
-                              <span>Original rows:</span>
-                              <span className="font-medium">{cleaningReport?.original_rows}</span>
-                            </div>
-                            <div className="flex justify-content-between">
-                              <span>After removing duplicates:</span>
-                              <span className="font-medium">{cleaningReport?.original_rows - (cleaningReport?.duplicates_removed || 0)}</span>
-                            </div>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="flex align-items-center justify-content-center h-full border-round bg-primary-50 p-4">
-                          <div className="text-center">
-                            <i className="pi pi-check-circle text-primary" style={{ fontSize: '2rem' }}></i>
-                            <p className="mt-2 mb-0">No duplicate rows were found!</p>
-                            <p className="text-sm text-600 mt-1">Your dataset has no exact duplicate rows</p>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="flex align-items-center justify-content-center h-full border-round bg-primary-50 p-4">
-                      <div className="text-center">
-                        <i className="pi pi-info-circle text-primary" style={{ fontSize: '2rem' }}></i>
-                        <p className="mt-2 mb-0">Duplicate checking not performed yet</p>
-                        <p className="text-sm text-600 mt-1">Clean your data to check for duplicates</p>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-          
-              <div className="col-12 md:col-4">
-                <div className="p-4 border-round shadow-2 bg-primary-50 h-full">
-                  <h3 className="mt-0 mb-3">
-                    Missing Values
-                    <span className="ml-2 p-overlay-badge" data-pr-tooltip="Missing Values" data-pr-position="right" data-pr-at="right+5 top">
-                      <i className="pi pi-info-circle" style={{ fontSize: '0.75rem', color: 'var(--primary-color)' }}></i>
-                      <Tooltip target=".p-overlay-badge" content={missingValuesDescription} />
-                    </span>
-                  </h3>
-                  <Tooltip target="#missing-values-header-info" position="right" showDelay={150}>
-                    <div className="p-2">
-                      <p className="m-0 mb-2">{missingValuesDescription}</p>
-                      <h5 className="mt-2 mb-2">Available options:</h5>
-                      <ul className="m-0 p-0" style={{ listStyleType: 'none' }}>
-                        <li className="mb-2"><b>Do nothing:</b> {missingValueDescriptions.none}</li>
-                        <li className="mb-2"><b>Fill with mean:</b> Use the average value (good for numbers that follow a normal pattern)</li>
-                        <li className="mb-2"><b>Fill with median:</b> Use the middle value (good for numbers with some extreme values)</li>
-                        <li className="mb-2"><b>Fill with mode:</b> Use the most common value (good for categories or numbers with patterns)</li>
-                        <li><b>Drop rows:</b> Remove rows with missing data (use when the missing data makes the row unusable)</li>
-                      </ul>
-                    </div>
-                  </Tooltip>
-                  
-                  {/* Bulk Actions for Missing Values */}
-                  <div className="p-3 bg-primary-100 border-round mb-3">
-                    <div className="font-medium mb-2">Bulk Actions</div>
-                    <div className="grid">
-                      <div className="col-6">
-                        <Button 
-                          label="All to None" 
-                          icon="pi pi-ban" 
-                          className="p-button-outlined p-button-secondary p-button-sm w-full"
-                          onClick={() => {
-                            if (!dataInfo) return;
-                            const newMissingValues = { ...cleaningOptions.missing_values };
-                            dataInfo.column_names.forEach(column => {
-                              newMissingValues[column] = { method: 'none' };
-                            });
-                            setCleaningOptions(prev => ({
-                              ...prev,
-                              missing_values: newMissingValues
-                            }));
-                          }}
-                        />
-                      </div>
-                      <div className="col-6">
-                        <Dropdown
-                          placeholder="Apply to All"
-                          options={[
-                            { label: 'Mean', value: 'mean' },
-                            { label: 'Median', value: 'median' },
-                            { label: 'Mode', value: 'mode' },
-                            { label: 'Drop', value: 'drop' }
-                          ]}
-                          onChange={e => {
-                            if (!e.value || !dataInfo) return;
-                            const newMissingValues = { ...cleaningOptions.missing_values };
-                            dataInfo.column_names.forEach(column => {
-                              newMissingValues[column] = { method: e.value };
-                            });
-                            setCleaningOptions(prev => ({
-                              ...prev,
-                              missing_values: newMissingValues
-                            }));
-                          }}
-                          className="w-full p-button-sm"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                  
-                  {/* Group columns by type for better organization */}
-                  {dataInfo && dataInfo.column_names && (
-                    <>
-                      {/* ID Fields */}
-                      <div className="mb-3">
-                        <div className="p-2 bg-primary-200 border-round font-bold">Identifier Fields</div>
-                        {dataInfo.column_names
-                          .filter(column => column.toLowerCase().includes('id') || column.toLowerCase().includes('code'))
-                          .map(column => (
-                            <div key={column} className="p-2 border-1 border-primary-200 border-top-none">
-                              <div className="flex align-items-center justify-content-between">
-                                <div className="flex align-items-center">
-                                  <i className="pi pi-key mr-2 text-primary-800" style={{ fontSize: '0.9rem' }}></i>
-                                  <span className="font-medium">{column}</span>
-                                </div>
-                                <span className="text-sm bg-primary-100 px-2 py-1 border-round">{dataInfo.missing_values[column] || 0} missing</span>
-                              </div>
-                              <div className="mt-1 p-field w-full" id={`missing-value-${column}`}>
-                                <Dropdown
-                                  value={cleaningOptions.missing_values[column]?.method || 'none'}
-                                  options={[
-                                    { label: 'Do nothing', value: 'none' },
-                                    { label: 'Drop rows', value: 'drop' }
-                                  ]}
-                                  onChange={e => handleMissingValueOptionChange(column, 'method', e.value)}
-                                  className="w-full"
-                                />
-                                <Tooltip target={`#missing-value-${column}`} position="right" showDelay={150}>
-                                  {missingValueDescriptions[cleaningOptions.missing_values[column]?.method || 'none']}
-                                </Tooltip>
-                              </div>
-                            </div>
-                          ))}
-                      </div>
-                      
-                      {/* Numeric Fields */}
-                      <div className="mb-3">
-                        <div className="p-2 bg-primary-200 border-round font-bold">Numeric Fields</div>
-                        {dataInfo.column_names
-                          .filter(column => 
-                            (column.toLowerCase().includes('age') || 
-                             column.toLowerCase().includes('amount') || 
-                             column.toLowerCase().includes('price') || 
-                             column.toLowerCase().includes('points')) && 
-                            !column.toLowerCase().includes('id'))
-                          .map(column => (
-                            <div key={column} className="p-2 border-1 border-primary-200 border-top-none">
-                              <div className="flex align-items-center justify-content-between">
-                                <div className="flex align-items-center">
-                                  <i className="pi pi-hashtag mr-2 text-primary-800" style={{ fontSize: '0.9rem' }}></i>
-                                  <span className="font-medium">{column}</span>
-                                </div>
-                                <span className="text-sm bg-primary-100 px-2 py-1 border-round">{dataInfo.missing_values[column] || 0} missing</span>
-                              </div>
-                              <div className="mt-1 p-field w-full" id={`missing-value-${column}`}>
-                                <Dropdown
-                                  value={cleaningOptions.missing_values[column]?.method || 'none'}
-                                  options={[
-                                    { label: 'Do nothing', value: 'none' },
-                                    { label: 'Drop rows', value: 'drop' },
-                                    { label: 'Fill with mean', value: 'mean' },
-                                    { label: 'Fill with median', value: 'median' },
-                                    { label: 'Fill with mode', value: 'mode' }
-                                  ]}
-                                  onChange={e => handleMissingValueOptionChange(column, 'method', e.value)}
-                                  className="w-full"
-                                />
-                                <Tooltip target={`#missing-value-${column}`} position="right" showDelay={150}>
-                                  {missingValueDescriptions[cleaningOptions.missing_values[column]?.method || 'none']}
-                                </Tooltip>
-                              </div>
-                              {cleaningOptions.missing_values[column]?.method && 
-                               cleaningOptions.missing_values[column]?.method !== 'none' && 
-                               cleaningOptions.missing_values[column]?.method !== 'drop' && (
-                                <div className="mt-1 p-1 bg-primary-50 border-round text-xs text-600">
-                                  <i className="pi pi-info-circle mr-1"></i>
-                                  {cleaningOptions.missing_values[column]?.method === 'mean' && "Will fill with average value"}
-                                  {cleaningOptions.missing_values[column]?.method === 'median' && "Will fill with middle value"}
-                                  {cleaningOptions.missing_values[column]?.method === 'mode' && "Will fill with most common value"}
-                                </div>
-                              )}
-                            </div>
-                          ))}
-                      </div>
-                      
-                      {/* Date Fields */}
-                      <div className="mb-3">
-                        <div className="p-2 bg-primary-200 border-round font-bold">Date Fields</div>
-                        {dataInfo.column_names
-                          .filter(column => 
-                            column.toLowerCase().includes('date') || 
-                            column.toLowerCase().includes('time'))
-                          .map(column => (
-                            <div key={column} className="p-2 border-1 border-primary-200 border-top-none">
-                              <div className="flex align-items-center justify-content-between">
-                                <div className="flex align-items-center">
-                                  <i className="pi pi-calendar mr-2 text-primary-800" style={{ fontSize: '0.9rem' }}></i>
-                                  <span className="font-medium">{column}</span>
-                                </div>
-                                <span className="text-sm bg-primary-100 px-2 py-1 border-round">{dataInfo.missing_values[column] || 0} missing</span>
-                              </div>
-                              <div className="mt-1 p-field w-full" id={`missing-value-${column}`}>
-                                <Dropdown
-                                  value={cleaningOptions.missing_values[column]?.method || 'none'}
-                                  options={[
-                                    { label: 'Do nothing', value: 'none' },
-                                    { label: 'Drop rows', value: 'drop' },
-                                    { label: 'Fill with mode', value: 'mode' }
-                                  ]}
-                                  onChange={e => handleMissingValueOptionChange(column, 'method', e.value)}
-                                  className="w-full"
-                                />
-                                <Tooltip target={`#missing-value-${column}`} position="right" showDelay={150}>
-                                  {missingValueDescriptions[cleaningOptions.missing_values[column]?.method || 'none']}
-                                </Tooltip>
-                              </div>
-                            </div>
-                          ))}
-                      </div>
-                      
-                      {/* Text/Categorical Fields */}
-                      <div className="mb-3">
-                        <div className="p-2 bg-primary-200 border-round font-bold">Text/Categorical Fields</div>
-                        {dataInfo.column_names
-                          .filter(column => 
-                            !column.toLowerCase().includes('id') && 
-                            !column.toLowerCase().includes('code') &&
-                            !column.toLowerCase().includes('age') && 
-                            !column.toLowerCase().includes('amount') && 
-                            !column.toLowerCase().includes('price') &&
-                            !column.toLowerCase().includes('points') &&
-                            !column.toLowerCase().includes('date') && 
-                            !column.toLowerCase().includes('time'))
-                          .map(column => (
-                            <div key={column} className="p-2 border-1 border-primary-200 border-top-none">
-                              <div className="flex align-items-center justify-content-between">
-                                <div className="flex align-items-center">
-                                  <i className="pi pi-list mr-2 text-primary-800" style={{ fontSize: '0.9rem' }}></i>
-                                  <span className="font-medium">{column}</span>
-                                </div>
-                                <span className="text-sm bg-primary-100 px-2 py-1 border-round">{dataInfo.missing_values[column] || 0} missing</span>
-                              </div>
-                              <div className="mt-1 p-field w-full" id={`missing-value-${column}`}>
-                                <Dropdown
-                                  value={cleaningOptions.missing_values[column]?.method || 'none'}
-                                  options={[
-                                    { label: 'Do nothing', value: 'none' },
-                                    { label: 'Drop rows', value: 'drop' },
-                                    { label: 'Fill with mode', value: 'mode' }
-                                  ]}
-                                  onChange={e => handleMissingValueOptionChange(column, 'method', e.value)}
-                                  className="w-full"
-                                />
-                                <Tooltip target={`#missing-value-${column}`} position="right" showDelay={150}>
-                                  {missingValueDescriptions[cleaningOptions.missing_values[column]?.method || 'none']}
-                                </Tooltip>
-                              </div>
-                            </div>
-                          ))}
-                      </div>
-                    </>
-                  )}
-                </div>
-              </div>
-          
-              <div className="col-12 md:col-4">
-                <div className="p-4 border-round shadow-2 bg-primary-50 h-full">
-                  <h3 className="mt-0 mb-3">
-                    Outliers
-                    <span className="ml-2 p-overlay-badge" data-pr-tooltip="Outliers" data-pr-position="right" data-pr-at="right+5 top">
-                      <i className="pi pi-info-circle" style={{ fontSize: '0.75rem', color: 'var(--primary-color)' }}></i>
-                      <Tooltip target=".p-overlay-badge" content={outliersDescription} />
-                    </span>
-                  </h3>
-                  <Tooltip target="#outliers-header-info" position="right" showDelay={150}>
-                    <div className="p-2">
-                      <p className="m-0 mb-2">{outliersDescription}</p>
-                      <h5 className="mt-2 mb-2">Detection methods:</h5>
-                      <ul className="m-0 p-0" style={{ listStyleType: 'none' }}>
-                        <li className="mb-2"><b>Z-Score:</b> {outlierDescriptions.zscore}</li>
-                        <li className="mb-2"><b>IQR:</b> {outlierDescriptions.iqr}</li>
-                        <li className="mt-2"><b>Threshold:</b> How sensitive the detection should be - higher values are more lenient</li>
-                      </ul>
-                    </div>
-                  </Tooltip>
-                  
-                  {/* Outlier Education */}
-                  <div className="p-3 bg-primary-100 border-round mb-3">
-                    <div className="flex align-items-center mb-2">
-                      <i className="pi pi-info-circle mr-2 text-primary"></i>
-                      <div className="font-medium">What are outliers?</div>
-                    </div>
-                    <p className="text-sm m-0">Outliers are unusual values that differ significantly from other observations. They can skew analysis results and may indicate errors or special cases that need attention.</p>
-                    <div className="flex justify-content-between align-items-center mt-2">
-                      <div className="flex align-items-center">
-                        <i className="pi pi-chart-line mr-1 text-primary-800" style={{ fontSize: '0.8rem' }}></i>
-                        <span className="text-xs">Z-Score: Statistical distance from mean</span>
-                      </div>
-                      <div className="flex align-items-center">
-                        <i className="pi pi-bars mr-1 text-primary-800" style={{ fontSize: '0.8rem' }}></i>
-                        <span className="text-xs">IQR: Based on quartile ranges</span>
-                      </div>
-                    </div>
-                  </div>
-                  
-                  {/* Bulk Actions for Outliers */}
-                  <div className="p-3 bg-primary-100 border-round mb-3">
-                    <div className="font-medium mb-2">Bulk Actions</div>
-                    <div className="grid">
-                      <div className="col-6">
-                        <Button 
-                          label="Enable All" 
-                          icon="pi pi-check-square" 
-                          className="p-button-outlined p-button-success p-button-sm w-full"
-                          onClick={() => {
-                            if (!dataInfo) return;
-                            const newOutliers = { ...cleaningOptions.outliers };
-                            dataInfo.column_names
-                              .filter(column => 
-                                column.toLowerCase().includes('age') || 
-                                column.toLowerCase().includes('amount') || 
-                                column.toLowerCase().includes('price') || 
-                                column.toLowerCase().includes('points'))
-                              .forEach(column => {
-                                newOutliers[column] = { 
-                                  ...newOutliers[column],
-                                  enabled: true,
-                                  method: newOutliers[column]?.method || 'zscore',
-                                  threshold: newOutliers[column]?.threshold || 3
-                                };
-                              });
-                            setCleaningOptions(prev => ({
-                              ...prev,
-                              outliers: newOutliers
-                            }));
-                          }}
-                        />
-                      </div>
-                      <div className="col-6">
-                        <Button 
-                          label="Disable All" 
-                          icon="pi pi-ban" 
-                          className="p-button-outlined p-button-danger p-button-sm w-full"
-                          onClick={() => {
-                            if (!dataInfo) return;
-                            const newOutliers = { ...cleaningOptions.outliers };
-                            dataInfo.column_names.forEach(column => {
-                              newOutliers[column] = { 
-                                ...newOutliers[column],
-                                enabled: false 
-                              };
-                            });
-                            setCleaningOptions(prev => ({
-                              ...prev,
-                              outliers: newOutliers
-                            }));
-                          }}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                  
-                  {/* Only show numeric fields for outlier detection since it only makes sense for numbers */}
-                  {dataInfo && dataInfo.column_names && (
-                    <div className="mb-3">
-                      <div className="p-2 bg-primary-200 border-round font-bold">Numeric Fields</div>
-                      {dataInfo.column_names
-                        .filter(column => 
-                          (column.toLowerCase().includes('age') || 
-                           column.toLowerCase().includes('amount') || 
-                           column.toLowerCase().includes('price') || 
-                           column.toLowerCase().includes('points')) && 
-                          !column.toLowerCase().includes('id'))
-                        .map(column => (
-                          <div key={column} className="p-2 border-1 border-primary-200 border-top-none">
-                            <div className="flex align-items-center justify-content-between mb-1">
-                              <div className="field-checkbox mb-0">
-                                <Checkbox
-                                  inputId={`outlier-${column}`}
-                                  checked={cleaningOptions.outliers[column]?.enabled || false}
-                                  onChange={e => handleOutlierOptionChange(column, 'enabled', e.checked)}
-                                />
-                                <label htmlFor={`outlier-${column}`} className="ml-2 font-medium">
-                                  <i className="pi pi-hashtag mr-1 text-primary-800" style={{ fontSize: '0.9rem' }}></i>
-                                  {column}
-                                </label>
-                              </div>
-                              <span className="text-xs bg-primary-300 px-1 py-1 border-round">Numeric</span>
-                            </div>
-                            {cleaningOptions.outliers[column]?.enabled && (
-                              <div className="pl-4 pt-2 border-left-2 border-primary-300">
-                                <div className="mb-2">
-                                  <div className="flex justify-content-between align-items-center">
-                                    <label className="block text-sm mb-1">Detection Method</label>
-                                    <div className="p-tag p-tag-info p-tag-rounded text-xs">
-                                      {cleaningOptions.outliers[column]?.method === 'zscore' ? 
-                                        <span>Statistical</span> : 
-                                        <span>Range-based</span>
-                                      }
-                                    </div>
-                                  </div>
-                                  <div className="p-field w-full" id={`outlier-method-${column}`}>
-                                    <Dropdown
-                                      value={cleaningOptions.outliers[column]?.method || 'zscore'}
-                                      options={[
-                                        { label: 'Z-Score (Statistical)', value: 'zscore' },
-                                        { label: 'IQR (Range-based)', value: 'iqr' }
-                                      ]}
-                                      onChange={e => handleOutlierOptionChange(column, 'method', e.value)}
-                                      className="w-full"
-                                    />
-                                    <Tooltip target={`#outlier-method-${column}`} position="right" showDelay={150}>
-                                      {outlierDescriptions[cleaningOptions.outliers[column]?.method || 'zscore']}
-                                    </Tooltip>
-                                  </div>
-                                </div>
-                                <div className="mb-2">
-                                  <div className="flex justify-content-between align-items-center">
-                                    <label className="block text-sm mb-1">
-                                      {cleaningOptions.outliers[column]?.method === 'zscore' ? 'Z-Score Threshold' : 'IQR Multiplier'}
-                                    </label>
-                                    <div className="text-xs bg-primary-50 px-2 py-1 border-round">
-                                      {cleaningOptions.outliers[column]?.threshold || 3}
-                                    </div>
-                                  </div>
-                                  <div className="grid">
-                                    <div className="col-3 text-center pt-1">
-                                      <span className="text-xs">Strict</span>
-                                    </div>
-                                    <div className="col-6">
-                                      <div className="p-field w-full" id={`outlier-threshold-${column}`}>
-                                        <InputNumber
-                                          value={cleaningOptions.outliers[column]?.threshold || 3}
-                                          onChange={e => handleOutlierOptionChange(column, 'threshold', e.value)}
-                                          min={0.1}
-                                          max={10}
-                                          step={0.1}
-                                          showButtons
-                                          className="w-full"
-                                        />
-                                        <Tooltip target={`#outlier-threshold-${column}`} position="right" showDelay={150}>
-                                          {`Higher values mean fewer outliers will be detected. ${cleaningOptions.outliers[column]?.method === 'zscore' ? 'Typical values are between 2-4' : 'Typical values are between 1.5-3'}`}
-                                        </Tooltip>
-                                      </div>
-                                    </div>
-                                    <div className="col-3 text-center pt-1">
-                                      <span className="text-xs">Lenient</span>
-                                    </div>
-                                  </div>
-                                </div>
-                                <div className="p-2 bg-primary-50 border-round text-xs">
-                                  <i className="pi pi-info-circle mr-1 text-primary-700"></i>
-                                  {cleaningOptions.outliers[column]?.method === 'zscore' 
-                                    ? `Values more than ${cleaningOptions.outliers[column]?.threshold || 3} standard deviations from the mean will be removed.` 
-                                    : `Values below Q1-${cleaningOptions.outliers[column]?.threshold || 3}×IQR or above Q3+${cleaningOptions.outliers[column]?.threshold || 3}×IQR will be removed.`
-                                  }
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          </TabPanel>
-          
-          <TabPanel header="AI Recommendations">
-            <div className="flex align-items-center mb-3">
-              <h3 className="m-0">AI Recommendations</h3>
-              <i 
-                className="pi pi-info-circle ml-2" 
-                style={{ cursor: 'pointer' }}
-                id="ai-recommendations-info"
-              />
-              <Tooltip target="#ai-recommendations-info" position="right" showDelay={150}>
-                Let AI analyze your data and suggest optimal cleaning strategies
-              </Tooltip>
-            </div>
-            
-            {!aiRecommendations ? (
-              <div className="flex flex-column align-items-center justify-content-center p-5">
-                <Message severity="info" text="Click 'Get AI Recommendations' to analyze your dataset and receive personalized cleaning suggestions." />
-                <Button 
-                  label="Get Recommendations" 
-                  icon="pi pi-bolt" 
-                  className="p-button-outlined p-button-info mt-3"
-                  onClick={getAIRecommendations}
-                  loading={loadingRecommendations}
-                  disabled={isCleaningData || !selectedFile?.name}
-                />
-              </div>
-            ) : (
-              <div className="p-3">
-                <h3 className="mt-0 mb-2">AI Cleaning Summary</h3>
-                <p>{aiRecommendations.explanation}</p>
-                
-                <Divider />
-                
-                <div className="grid">
-                  <div className="col-12 md:col-4">
-                    <Card title="General Strategy" className="h-full">
-                      <p className="m-0">{aiRecommendations.general_advice}</p>
-                      <div className="mt-3">
-                        <span className="font-bold">Duplicates: </span>
-                        <span>{aiRecommendations.should_remove_duplicates ? 'Remove' : 'Keep'}</span>
-                      </div>
-                    </Card>
-                  </div>
-                  
-                  <div className="col-12 md:col-8">
-                    <Card title="Column-Specific Recommendations" className="h-full">
-                      <div className="grid">
-                        {Object.entries(aiRecommendations.column_recommendations || {}).map(([column, rec]) => (
-                          <div key={column} className="col-12 md:col-6 lg:col-4">
-                            <div className="p-3 border-1 border-round mb-3">
-                              <h4 className="mt-0 mb-2">{column}</h4>
-                              {rec.missing_value_strategy && (
-                                <div className="mb-2">
-                                  <span className="font-bold">Missing Values: </span>
-                                  <span>{rec.missing_value_strategy}</span>
-                                </div>
-                              )}
-                              {rec.outlier_strategy && (
-                                <div className="mb-2">
-                                  <span className="font-bold">Outliers: </span>
-                                  <span>{rec.outlier_strategy}</span>
-                                </div>
-                              )}
-                              {rec.recommendation && (
-                                <p className="text-sm mt-2 mb-0">{rec.recommendation}</p>
-                              )}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </Card>
-                  </div>
-                </div>
-              </div>
-            )}
-          </TabPanel>
-        </TabView>
+        {cleaningReport && (
+          <div className="mt-4 p-3 border-round bg-primary-50">
+            <h4 className="mt-0 mb-2 text-primary">Previous Cleaning Report</h4>
+            <p>Your data has already been cleaned. You can view the detailed report or clean again.</p>
+            <Button 
+              label="View Report" 
+              icon="pi pi-file" 
+              onClick={() => setShowReportDialog(true)} 
+              className="p-button-outlined p-button-info mt-2" 
+            />
+          </div>
+        )}
       </Dialog>
     );
   };
@@ -1073,6 +550,64 @@ export default function Home() {
                       {line}
                     </p>
                   ))}
+                </div>
+              </div>
+            )}
+            
+            {cleaningReport.is_ecommerce_dataset && (
+              <div className="p-3 mb-4 border-round shadow-2 bg-blue-50">
+                <div className="flex align-items-center mb-2">
+                  <i className="pi pi-shopping-cart text-blue-700 mr-2" style={{ fontSize: '1.5rem' }}></i>
+                  <h3 className="m-0 text-blue-700">E-commerce Domain Detected</h3>
+                </div>
+                <p>Our LangChain agent detected this dataset is from the e-commerce domain and applied specialized data cleaning rules:</p>
+                <ul className="mt-2 mb-2">
+                  <li>Price columns: Used median for imputation and capped outliers to preserve premium product data</li>
+                  <li>Quantity columns: Converted to integers and used mode imputation to maintain data integrity</li>
+                  <li>Date columns: Standardized formats and validated values</li>
+                  <li>ID columns: Ensured uniqueness and proper formatting</li>
+                </ul>
+              </div>
+            )}
+            
+            {cleaningReport.agent_suggestions && (
+              <div className="p-3 mb-4 border-round shadow-2 bg-green-50">
+                <div className="flex align-items-center mb-2">
+                  <i className="pi pi-bolt text-green-700 mr-2" style={{ fontSize: '1.5rem' }}></i>
+                  <h3 className="m-0 text-green-700">LangChain Agent Analysis</h3>
+                </div>
+                <p className="p-2 bg-white border-round">{cleaningReport.agent_suggestions}</p>
+              </div>
+            )}
+            
+            {cleaningReport.audit_log && cleaningReport.audit_log.length > 0 && (
+              <div className="p-3 mb-4 border-round shadow-2 bg-yellow-50">
+                <div className="flex align-items-center justify-content-between mb-2">
+                  <div className="flex align-items-center">
+                    <i className="pi pi-history text-yellow-700 mr-2" style={{ fontSize: '1.5rem' }}></i>
+                    <h3 className="m-0 text-yellow-700">Data Cleaning Audit Log</h3>
+                  </div>
+                  <span className="p-badge p-badge-info">{cleaningReport.audit_log.length} operations</span>
+                </div>
+                <div className="p-2 bg-white border-round" style={{ maxHeight: '300px', overflowY: 'auto' }}>
+                  <ul className="list-none p-0 m-0">
+                    {cleaningReport.audit_log.map((entry, index) => (
+                      <li key={index} className="p-2 mb-1 border-bottom-1 border-300">
+                        <div className="flex align-items-center justify-content-between">
+                          <div>
+                            <span className="font-medium">{entry.operation}</span>
+                            {entry.column && <span className="ml-2 text-500">on column: <span className="text-primary">{entry.column}</span></span>}
+                          </div>
+                          <div className="text-sm text-500">{new Date(entry.timestamp).toLocaleTimeString()}</div>
+                        </div>
+                        {entry.rows_affected && (
+                          <div className="text-sm mt-1">
+                            Rows affected: <span className="font-medium">{entry.rows_affected}</span>
+                          </div>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
                 </div>
               </div>
             )}
@@ -1273,28 +808,28 @@ export default function Home() {
       <Tooltip target="[data-pr-tooltip]" position="right" showDelay={150} />
       
       <div className="card">
-        <h1 className="text-2xl font-bold mb-4">Data Cleaning Tool</h1>
+        <h1 className="text-2xl font-bold mb-4 text-center">Data Cleaning Tool</h1>
         
         <div className="mb-3 text-center">
           <h2 className="text-xl font-bold mb-2">Step 1: Upload your data file</h2>
           <p className="mb-2">Upload a CSV or Excel file to begin the cleaning process.</p>
-          <FileUpload
-            mode="basic"
-            name="file"
-            url="/api/upload"
-            accept=".csv,.xlsx"
-            maxFileSize={10000000}
-            chooseLabel="Upload File"
-            auto
-            onUpload={handleFileUpload}
-            onError={(e) => {
+        <FileUpload
+          mode="basic"
+          name="file"
+          url="/api/upload"
+          accept=".csv,.xlsx"
+          maxFileSize={10000000}
+          chooseLabel="Upload File"
+          auto
+          onUpload={(e) => handleUploadFile(e.files[0])}
+          onError={(e) => {
               toastRef.current?.show({
-                severity: 'error',
-                summary: 'Error',
-                detail: 'Failed to upload file',
-              });
-            }}
-          />
+              severity: 'error',
+              summary: 'Error',
+              detail: 'Failed to upload file',
+            });
+          }}
+        />
         </div>
 
         {loading && <ProgressBar mode="indeterminate" className="mt-3" />}
@@ -1317,7 +852,7 @@ export default function Home() {
                   <div className="flex align-items-center mb-2">
                     <i className="pi pi-table text-primary mr-2" style={{ fontSize: '1.5rem' }}></i>
                     <h3 className="text-lg font-semibold m-0 text-primary">Rows</h3>
-                  </div>
+              </div>
                   <p className="text-2xl font-bold m-0">{dataInfo.rows}</p>
                 </div>
               </div>
@@ -1340,7 +875,7 @@ export default function Home() {
                   </div>
                   {Object.keys(dataInfo.missing_values).length > 0 ? (
                     <div className="grid">
-                      {Object.entries(dataInfo.missing_values).map(([column, count]) => (
+                  {Object.entries(dataInfo.missing_values).map(([column, count]) => (
                         <div key={column} className="col-6 md:col-4">
                           <div className="flex align-items-center">
                             <span className="font-medium">{column}:</span>
