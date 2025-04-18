@@ -468,11 +468,11 @@ def upload_file():
             except TypeError as json_error:
                 app.logger.error(f"JSON serialization error: {str(json_error)}")
                 # Convert data_info to a fully serializable format
-                return jsonify({
-                    'message': 'File uploaded successfully',
+            return jsonify({
+                'message': 'File uploaded successfully',
                     'data_info': json.loads(json.dumps(data_info, cls=NumpyEncoder)),
                     'data': json.loads(json.dumps(sample_data, cls=NumpyEncoder))
-                }), 200
+            }), 200
         except Exception as e:
             app.logger.error(f"Error processing file: {str(e)}")
             return jsonify({'error': f'Error processing file: {str(e)}'}), 500
@@ -557,11 +557,11 @@ def clean_data():
             report['human_readable'] = f"AI cleaning completed successfully. Processed {report.get('original_rows', 0)} rows and handled missing values and outliers as needed."
         
         try:
-            return jsonify({
-                'message': 'Data cleaned successfully',
-                'report': report,
-                'cleaned_filename': cleaned_filename
-            }), 200
+        return jsonify({
+            'message': 'Data cleaned successfully',
+            'report': report,
+            'cleaned_filename': cleaned_filename
+        }), 200
         except TypeError as json_error:
             app.logger.error(f"JSON serialization error in clean_data: {str(json_error)}")
             # Use our custom JSON encoder to handle all types

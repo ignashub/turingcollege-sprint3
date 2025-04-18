@@ -117,3 +117,23 @@ The agentic components are primarily implemented in the backend using:
 - File type verification
 - Error handling 
 - API key protection 
+
+# Environment Variables
+
+This project uses environment variables for configuration. To set up:
+
+1. Copy the example environment file:
+   ```
+   cp backend/env.example backend/.env
+   ```
+
+2. Edit the `.env` file and add your actual values:
+   ```
+   # Required for OpenAI-based features
+   OPENAI_API_KEY=your-openai-api-key-here
+   
+   # Additional security (change in production)
+   SECRET_KEY=your-secret-key-change-me
+   ```
+
+3. Never commit your `.env` file to the repository as it may contain sensitive information. 

@@ -10,6 +10,7 @@ env/
 ENV/
 .env
 .env.*
+backend/.env
 
 # Node.js
 node_modules/

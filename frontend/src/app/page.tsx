@@ -421,7 +421,7 @@ export default function Home() {
               </div>
             )}
             
-            <div className="grid">
+              <div className="grid">
               <div className="col-12 md:col-4">
                 <div className="p-4 border-round shadow-2 bg-primary-50 h-full">
                   <h3 className="mt-0 mb-3">Dataset Size</h3>
@@ -454,7 +454,7 @@ export default function Home() {
                     Missing Values
                     <span id="missing-values-info" className="ml-2">
                       <i className="pi pi-info-circle" style={{ cursor: 'pointer', fontSize: '0.8rem' }}></i>
-                    </span>
+                  </span>
                   </h3>
                   <Tooltip target="#missing-values-info" position="right" showDelay={150}>
                     {missingValuesDescription}
@@ -517,7 +517,7 @@ export default function Home() {
                     Outliers
                     <span id="outliers-info" className="ml-2">
                       <i className="pi pi-info-circle" style={{ cursor: 'pointer', fontSize: '0.8rem' }}></i>
-                    </span>
+                  </span>
                   </h3>
                   <Tooltip target="#outliers-info" position="right" showDelay={150}>
                     {outliersDescription}
@@ -596,11 +596,11 @@ export default function Home() {
                 </div>
               </div>
             </div>
-          </div>
+        </div>
         ) : (
           <div className="flex justify-content-center">
             <ProgressSpinner style={{ width: '50px', height: '50px' }} />
-          </div>
+        </div>
         )}
       </Dialog>
     );
