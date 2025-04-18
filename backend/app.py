@@ -68,7 +68,7 @@ app.json_encoder = NumpyEncoder
 
 # More permissive CORS configuration for debugging
 CORS(app, resources={
-    r"/api/*": {
+    r"/*": {
         "origins": ["http://localhost:3000"],
         "methods": ["GET", "POST", "OPTIONS"],
         "allow_headers": ["Content-Type", "Authorization", "X-Requested-With"],
@@ -105,6 +105,16 @@ def detect_missing_values(df_path: str) -> Dict[str, Any]:
         Dictionary containing missing values per column
     """
     try:
+        # Handle string input from LangChain
+        if isinstance(df_path, str) and not df_path.endswith(('.csv', '.xlsx')):
+            try:
+                # Try to access the global filepath from the context
+                global filepath
+                df_path = filepath
+            except:
+                # If fails, return an error
+                return {"error": "Invalid file path"}
+        
         # Load dataframe
         if df_path.endswith('.csv'):
             df = pd.read_csv(df_path)
@@ -133,6 +143,24 @@ def detect_outliers(df_path: str, columns: Optional[List[str]] = None, method: s
         Dictionary with outlier information per column
     """
     try:
+        # Handle string input from LangChain
+        if isinstance(df_path, str) and df_path.strip().startswith('{'):
+            try:
+                # If input is a JSON string, parse it
+                import json
+                params = json.loads(df_path)
+                if isinstance(params, dict):
+                    # Extract parameters if available
+                    if 'columns' in params:
+                        columns = params['columns']
+                    if 'method' in params:
+                        method = params['method']
+                    # Use the filepath from the agent context
+                    df_path = filepath
+            except:
+                # If parsing fails, continue with original parameters
+                pass
+                
         # Load dataframe
         if df_path.endswith('.csv'):
             df = pd.read_csv(df_path)
@@ -183,6 +211,16 @@ def detect_duplicates(df_path: str) -> Dict[str, Any]:
         Dictionary with duplicate information
     """
     try:
+        # Handle string input from LangChain
+        if isinstance(df_path, str) and not df_path.endswith(('.csv', '.xlsx')):
+            try:
+                # Try to access the global filepath from the context
+                global filepath
+                df_path = filepath
+            except:
+                # If fails, return an error
+                return {"error": "Invalid file path"}
+        
         # Load dataframe
         if df_path.endswith('.csv'):
             df = pd.read_csv(df_path)
@@ -210,6 +248,16 @@ def generate_statistics(df_path: str) -> Dict[str, Any]:
         Dictionary with descriptive statistics
     """
     try:
+        # Handle string input from LangChain
+        if isinstance(df_path, str) and not df_path.endswith(('.csv', '.xlsx')):
+            try:
+                # Try to access the global filepath from the context
+                global filepath
+                df_path = filepath
+            except:
+                # If fails, return an error
+                return {"error": "Invalid file path"}
+        
         # Load dataframe
         if df_path.endswith('.csv'):
             df = pd.read_csv(df_path)
@@ -276,26 +324,42 @@ def initialize_data_cleaning_agent(filepath):
             api_key=openai_api_key
         )
         
-        # Define tools
+        # Create a function that captures the filepath in its closure
+        def create_tool_function(func_name, filepath):
+            def tool_function(input_str=""):
+                # Call the appropriate function with the filepath
+                if func_name == "detect_missing_values":
+                    return detect_missing_values(filepath)
+                elif func_name == "detect_outliers":
+                    return detect_outliers(filepath)
+                elif func_name == "detect_duplicates":
+                    return detect_duplicates(filepath)
+                elif func_name == "generate_statistics":
+                    return generate_statistics(filepath)
+                else:
+                    return {"error": f"Unknown function: {func_name}"}
+            return tool_function
+        
+        # Define tools with proper function wrappers
         tools = [
             Tool(
                 name="DetectMissingValues",
-                func=lambda: detect_missing_values(filepath),
+                func=create_tool_function("detect_missing_values", filepath),
                 description="Detects missing values in the dataset"
             ),
             Tool(
                 name="DetectOutliers",
-                func=lambda: detect_outliers(filepath),
+                func=create_tool_function("detect_outliers", filepath),
                 description="Detects outliers in numeric columns using statistical methods"
             ),
             Tool(
                 name="DetectDuplicates",
-                func=lambda: detect_duplicates(filepath),
+                func=create_tool_function("detect_duplicates", filepath),
                 description="Identifies duplicate rows in the dataset"
             ),
             Tool(
                 name="GenerateStatistics",
-                func=lambda: generate_statistics(filepath),
+                func=create_tool_function("generate_statistics", filepath),
                 description="Generates descriptive statistics for the dataset"
             )
         ]
@@ -315,7 +379,7 @@ def initialize_data_cleaning_agent(filepath):
         app.logger.error(f"Error initializing agent: {str(e)}")
         return None
 
-@app.route('/api/upload', methods=['POST'])
+@app.route('/upload', methods=['POST'])
 def upload_file():
     try:
         # Check if the request has the 'file' part
@@ -365,6 +429,9 @@ def upload_file():
                 'file_name': saved_filename
             }
             
+            # Include a sample of the data (first 100 rows) for display in the datatable
+            sample_data = df.head(100).fillna('').to_dict(orient='records')
+            
             # Get AI analysis if OpenAI key is configured
             try:
                 openai_api_key = os.getenv("OPENAI_API_KEY")
@@ -395,14 +462,16 @@ def upload_file():
             try:
                 return jsonify({
                     'message': 'File uploaded successfully',
-                    'data_info': data_info
+                    'data_info': data_info,
+                    'data': sample_data
                 }), 200
             except TypeError as json_error:
                 app.logger.error(f"JSON serialization error: {str(json_error)}")
                 # Convert data_info to a fully serializable format
                 return jsonify({
                     'message': 'File uploaded successfully',
-                    'data_info': json.loads(json.dumps(data_info, cls=NumpyEncoder))
+                    'data_info': json.loads(json.dumps(data_info, cls=NumpyEncoder)),
+                    'data': json.loads(json.dumps(sample_data, cls=NumpyEncoder))
                 }), 200
         except Exception as e:
             app.logger.error(f"Error processing file: {str(e)}")
@@ -412,7 +481,7 @@ def upload_file():
         app.logger.error(f"Error uploading file: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
-@app.route('/api/clean', methods=['POST'])
+@app.route('/clean', methods=['POST'])
 def clean_data():
     try:
         data = request.json
@@ -506,7 +575,7 @@ def clean_data():
         app.logger.error(f"Error in clean_data: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
-@app.route('/api/download/<filename>', methods=['GET'])
+@app.route('/download/<filename>', methods=['GET'])
 def download_file(filename):
     try:
         filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)

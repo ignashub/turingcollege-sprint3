@@ -1,51 +1,27 @@
 'use client';
 
-import { useState, useRef, useMemo, useCallback, useEffect } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { FileUpload } from 'primereact/fileupload';
 import { DataTable } from 'primereact/datatable';
 import { Column } from 'primereact/column';
 import { Button } from 'primereact/button';
 import { Toast } from 'primereact/toast';
 import { Dialog } from 'primereact/dialog';
-import { Dropdown } from 'primereact/dropdown';
-import { Checkbox } from 'primereact/checkbox';
 import { ProgressBar } from 'primereact/progressbar';
 import { ProgressSpinner } from 'primereact/progressspinner';
 import { uploadFile, cleanData, downloadFile } from '@/services/api';
 import { DataInfo, CleaningOptions, CleaningReport } from '@/types';
 import { Tooltip } from 'primereact/tooltip';
-import { InputSwitch } from 'primereact/inputswitch';
-import { InputNumber } from 'primereact/inputnumber';
-import { Message } from 'primereact/message';
 import { Card } from 'primereact/card';
-import { Divider } from 'primereact/divider';
-import { TabView, TabPanel } from 'primereact/tabview';
 import axios from 'axios';
 import { API_BASE_URL } from '@/services/api';
 
-const missingValueDescriptions: Record<string, string> = {
-  none: "Keep empty cells as they are without making any changes",
-  mean: "Fill empty cells with the average value of all other values in that column. Best for numerical data with a normal distribution.",
-  median: "Fill empty cells with the middle value when all values are sorted. Good for numerical data with outliers.",
-  mode: "Fill empty cells with the most frequently occurring value in that column. Suitable for both numerical and categorical data.",
-  drop: "Remove rows containing empty cells. Use when missing data makes the entire row unreliable."
-};
-
-const outlierDescriptions: Record<string, string> = {
-  none: "Keep all values as they are without detecting or removing outliers",
-  zscore: "Detect unusual values based on how many standard deviations they are from the mean. Values beyond the threshold are considered outliers.",
-  iqr: "Detect unusual values using the Interquartile Range method. Values below Q1-(threshold×IQR) or above Q3+(threshold×IQR) are considered outliers."
-};
 
 const dataCleaningDescription = "Data cleaning helps improve your data quality by removing errors, duplicates, and handling missing values. Clean data leads to more accurate analysis results!";
-
-const duplicatesDescription = "Duplicate entries are exact copies of the same data. Removing them helps prevent skewed analysis results.";
-
 const missingValuesDescription = "Missing values are empty cells in your data. They can affect analysis results if not handled properly. Choose a method below to deal with them.";
-
 const outliersDescription = "Outliers are extreme values that differ significantly from other observations. They can skew your analysis results if not addressed.";
 
-// Define better types for AI recommendations
+// Define types for AI recommendations
 type ColumnRecommendation = {
   missing_value_strategy: string;
   outlier_strategy: string;
@@ -60,6 +36,7 @@ type AIRecommendation = {
 };
 
 export default function Home() {
+  // State variables
   const [dataInfo, setDataInfo] = useState<DataInfo | null>(null);
   const [data, setData] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
@@ -70,17 +47,14 @@ export default function Home() {
     remove_duplicates: false,
   });
   const [cleaningReport, setCleaningReport] = useState<CleaningReport | null>(null);
-  const [toast, setToast] = useState<Toast | null>(null);
-  const [useAI, setUseAI] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [aiRecommendations, setAIRecommendations] = useState<AIRecommendation | null>(null);
-  const [loadingRecommendations, setLoadingRecommendations] = useState(false);
   const [showReportDialog, setShowReportDialog] = useState(false);
   const [cleanedFilename, setCleanedFilename] = useState<string | null>('');
   const [isCleaningData, setIsCleaningData] = useState(false);
   const toastRef = useRef<Toast>(null);
 
-  // Initialize empty records in cleaningOptions when dataInfo changes
+  // Initialize cleaning options when dataInfo changes
   useEffect(() => {
     if (dataInfo) {
       const newMissingValues: CleaningOptions['missing_values'] = {};
@@ -99,6 +73,7 @@ export default function Home() {
     }
   }, [dataInfo]);
 
+  // File upload handler
   const handleUploadFile = async (file: File) => {
     try {
       setLoading(true);
@@ -111,6 +86,15 @@ export default function Home() {
       
       // Set data info for cleaned file
       setDataInfo(response.data_info);
+      
+      // Set the sample data returned from the backend
+      if (response.data && Array.isArray(response.data)) {
+        setData(response.data);
+        console.log('Data loaded:', response.data.length, 'rows');
+      } else {
+        console.warn('No data received from backend or data is not an array');
+        setData([]);
+      }
       
       setLoading(false);
       
@@ -159,42 +143,7 @@ export default function Home() {
     }
   };
 
-  const handleCleanData = async () => {
-    if (!dataInfo) return;
-
-    try {
-      setLoading(true);
-      const { report, cleaned_filename } = await cleanData(dataInfo.file_name, cleaningOptions);
-      setCleaningReport(report);
-      
-      // Download the cleaned file
-      const blob = await downloadFile(cleaned_filename);
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = cleaned_filename;
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
-      
-      toastRef.current?.show({
-        severity: 'success',
-        summary: 'Success',
-        detail: 'Data cleaned and downloaded successfully',
-      });
-    } catch (error) {
-      toastRef.current?.show({
-        severity: 'error',
-        summary: 'Error',
-        detail: 'Failed to clean data',
-      });
-    } finally {
-      setLoading(false);
-      setShowCleaningDialog(false);
-    }
-  };
-
+  // Clean data with LangChain Agent
   const handleDataCleaning = async () => {
     if (!selectedFile) {
       toastRef.current?.show({
@@ -215,7 +164,7 @@ export default function Home() {
         throw new Error('Filename not found');
       }
       
-      // Send cleaned data request to backend with LangChain agent mode
+      // Send request to backend with LangChain agent mode
       const response = await axios.post(`${API_BASE_URL}/clean`, {
         filename: filename,
         cleaning_options: {
@@ -248,147 +197,7 @@ export default function Home() {
     }
   };
 
-  const getAIRecommendations = async () => {
-    if (!dataInfo) {
-      toastRef.current?.show({
-        severity: 'error',
-        summary: 'Error',
-        detail: 'Please upload a file first'
-      });
-      return;
-    }
-    
-    setLoadingRecommendations(true);
-    toastRef.current?.show({
-      severity: 'info',
-      summary: 'AI Analysis Started',
-      detail: 'Our AI agent is analyzing your data. This may take a moment...'
-    });
-    
-    try {
-      // Now using the clean endpoint with empty cleaning options to let the agent analyze the data
-      const response = await fetch(`${API_BASE_URL}/api/clean`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          filename: dataInfo.file_name,
-          cleaning_options: { get_recommendations_only: true } // Just analyze, don't clean yet
-        })
-      });
-      
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to get AI recommendations');
-      }
-      
-      const data = await response.json();
-      
-      // Extract recommendations from the report
-      if (data.report && data.report.ai_recommendations) {
-        setAIRecommendations(data.report.ai_recommendations);
-        
-        // Apply AI recommendations to the cleaning options
-        if (data.report.ai_recommendations.column_recommendations) {
-          const newCleaningOptions = { ...cleaningOptions };
-          
-          // Update missing values options based on AI recommendations
-          if (newCleaningOptions.missing_values) {
-            Object.entries(data.report.ai_recommendations.column_recommendations).forEach(([column, columnRec]: [string, any]) => {
-              if (!newCleaningOptions.missing_values[column]) {
-                newCleaningOptions.missing_values[column] = { method: 'none' };
-              }
-              
-              if (columnRec.missing_values && columnRec.missing_values.method) {
-                const method = columnRec.missing_values.method;
-                newCleaningOptions.missing_values[column].method = 
-                  (method === 'mean' || method === 'median' || method === 'mode' || 
-                   method === 'drop' || method === 'none') 
-                    ? method : 'none';
-              }
-            });
-          }
-          
-          // Update outlier detection options based on AI recommendations
-          if (newCleaningOptions.outliers) {
-            Object.entries(data.report.ai_recommendations.column_recommendations).forEach(([column, columnRec]: [string, any]) => {
-              if (!newCleaningOptions.outliers[column]) {
-                newCleaningOptions.outliers[column] = { method: 'zscore', enabled: false, threshold: 3 };
-              }
-              
-              if (columnRec.outliers && columnRec.outliers.method && columnRec.outliers.method !== 'none') {
-                newCleaningOptions.outliers[column].method = 
-                  (columnRec.outliers.method === 'zscore' || columnRec.outliers.method === 'iqr') 
-                    ? columnRec.outliers.method as 'zscore' | 'iqr'
-                    : 'zscore';
-                newCleaningOptions.outliers[column].enabled = true;
-              }
-            });
-          }
-          
-          // Update duplicates option if recommended
-          if (data.report.ai_recommendations.duplicate_removal !== undefined) {
-            newCleaningOptions.remove_duplicates = data.report.ai_recommendations.duplicate_removal;
-          }
-          
-          setCleaningOptions(newCleaningOptions);
-        }
-        
-        // Show domain-specific message if detected
-        if (data.report.is_ecommerce_dataset) {
-          toastRef.current?.show({
-            severity: 'info',
-            summary: 'E-commerce Data Detected',
-            detail: 'Our AI has detected this is e-commerce data and provided specialized recommendations.'
-          });
-        }
-        
-        toastRef.current?.show({
-          severity: 'success',
-          summary: 'AI Analysis Complete',
-          detail: 'AI has analyzed your data and made recommendations for cleaning.'
-        });
-      } else {
-        throw new Error('No recommendations received from AI');
-      }
-      
-    } catch (error: any) {
-      console.error('Error getting AI recommendations:', error);
-      toastRef.current?.show({
-        severity: 'error',
-        summary: 'Error',
-        detail: error.message || 'Failed to get AI recommendations'
-      });
-    } finally {
-      setLoadingRecommendations(false);
-    }
-  };
-
-  const handleMissingValueOptionChange = (column: string, key: string, value: any) => {
-    setCleaningOptions(prev => ({
-      ...prev,
-      missing_values: {
-        ...prev.missing_values,
-        [column]: {
-          ...prev.missing_values[column],
-          [key]: value
-        }
-      }
-    }));
-  };
-
-  const handleOutlierOptionChange = (column: string, key: string, value: any) => {
-    setCleaningOptions(prev => ({
-      ...prev,
-      outliers: {
-        ...prev.outliers,
-        [column]: {
-          ...prev.outliers[column],
-          [key]: value
-        }
-      }
-    }));
-  };
-
+  // Render dialogs
   const renderCleaningDialog = () => {
     if (!dataInfo) return null;
 
@@ -798,12 +607,12 @@ export default function Home() {
   };
 
   const handleDownloadCleanedData = () => {
-    window.open(`${API_BASE_URL}/api/download/${cleanedFilename}`, '_blank');
+    window.open(`${API_BASE_URL}/download/${cleanedFilename}`, '_blank');
   };
 
   return (
     <main className="p-4">
-      <Toast ref={setToast} />
+      <Toast ref={toastRef} />
       <Tooltip target=".pi-info-circle" position="right" showDelay={150} />
       <Tooltip target="[data-pr-tooltip]" position="right" showDelay={150} />
       
@@ -816,12 +625,12 @@ export default function Home() {
         <FileUpload
           mode="basic"
           name="file"
-          url="/api/upload"
+          url="#"
           accept=".csv,.xlsx"
           maxFileSize={10000000}
           chooseLabel="Upload File"
-          auto
-          onUpload={(e) => handleUploadFile(e.files[0])}
+          auto={false}
+          onSelect={(e) => handleUploadFile(e.files[0])}
           onError={(e) => {
               toastRef.current?.show({
               severity: 'error',
