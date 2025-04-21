@@ -557,11 +557,11 @@ def clean_data():
             report['human_readable'] = f"AI cleaning completed successfully. Processed {report.get('original_rows', 0)} rows and handled missing values and outliers as needed."
         
         try:
-        return jsonify({
-            'message': 'Data cleaned successfully',
-            'report': report,
-            'cleaned_filename': cleaned_filename
-        }), 200
+            return jsonify({
+                'message': 'Data cleaned successfully',
+                'report': report,
+                'cleaned_filename': cleaned_filename
+            }), 200
         except TypeError as json_error:
             app.logger.error(f"JSON serialization error in clean_data: {str(json_error)}")
             # Use our custom JSON encoder to handle all types
