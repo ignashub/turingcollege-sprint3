@@ -12,6 +12,7 @@
     "@types/axios": "^0.14.4",
     "@types/http-proxy": "^1.17.16",
     "axios": "^1.8.4",
+    "chart.js": "^4.4.9",
     "http-proxy": "^1.18.1",
     "next": "15.3.0",
     "primeflex": "^4.0.0",

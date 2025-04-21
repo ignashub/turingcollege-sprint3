@@ -17,6 +17,8 @@ import { InputText } from 'primereact/inputtext';
 import axios from 'axios';
 import { API_BASE_URL } from '@/services/api';
 import { Accordion, AccordionTab } from 'primereact/accordion';
+import { TabView, TabPanel } from 'primereact/tabview';
+import { Chart } from 'primereact/chart';
 
 
 const dataCleaningDescription = "Data cleaning helps improve your data quality by removing errors, duplicates, and handling missing values. Clean data leads to more accurate analysis results!";
@@ -399,192 +401,293 @@ export default function Home() {
       >
         {cleaningReport ? (
           <div>
-            {cleaningReport.human_readable && (
-              <div className="p-4 border-round shadow-2 bg-primary-50 mb-4">
-                <h3 className="mt-0 mb-3 text-primary">
-                  <i className="pi pi-check-circle mr-2"></i>
-                  Cleaning Results
-                </h3>
-                <div className="whitespace-pre-line text-lg">
-                  {cleaningReport.human_readable.split('\n').map((line, index) => (
-                    <p key={index} className={`mb-2 ${line.startsWith('Dataset') ? 'text-xl font-bold text-primary' : ''}`}>
-                      {line}
-                    </p>
-                  ))}
-                </div>
-              </div>
-            )}
-            
-            {cleaningReport.is_ecommerce_dataset && (
-              <div className="p-3 mb-4 border-round shadow-2 bg-blue-50">
-                <div className="flex align-items-center mb-2">
-                  <i className="pi pi-shopping-cart text-blue-700 mr-2" style={{ fontSize: '1.5rem' }}></i>
-                  <h3 className="m-0 text-blue-700">E-commerce Domain Detected</h3>
-                </div>
-                <p>Our LangChain agent detected this dataset is from the e-commerce domain and applied specialized data cleaning rules:</p>
-                <ul className="mt-2 mb-2">
-                  <li>Price columns: Used median for imputation and capped outliers to preserve premium product data</li>
-                  <li>Quantity columns: Converted to integers and used mode imputation to maintain data integrity</li>
-                  <li>Date columns: Standardized formats and validated values</li>
-                  <li>ID columns: Ensured uniqueness and proper formatting</li>
-                </ul>
-              </div>
-            )}
-            
-            {cleaningReport.agent_suggestions && (
-              <div className="p-3 mb-4 border-round shadow-2 bg-green-50">
-                <div className="flex align-items-center mb-2">
-                  <i className="pi pi-bolt text-green-700 mr-2" style={{ fontSize: '1.5rem' }}></i>
-                  <h3 className="m-0 text-green-700">LangChain Agent Analysis</h3>
-                </div>
-                <p className="p-2 bg-white border-round">{cleaningReport.agent_suggestions}</p>
+            <TabView>
+              <TabPanel header="Cleaning Results">
+                {cleaningReport.human_readable && (
+                  <div className="p-4 border-round shadow-2 bg-primary-50 mb-4">
+                    <h3 className="mt-0 mb-3 text-primary">
+                      <i className="pi pi-check-circle mr-2"></i>
+                      Cleaning Results
+                    </h3>
+                    <div className="whitespace-pre-line text-lg">
+                      {cleaningReport.human_readable.split('\n').map((line, index) => (
+                        <p key={index} className={`mb-2 ${line.startsWith('Dataset') ? 'text-xl font-bold text-primary' : ''}`}>
+                          {line}
+                        </p>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 
-                {/* Add detailed AI thought process with expansion panel */}
-                <div className="mt-3">
-                  <Accordion>
-                    <AccordionTab header="View AI Thought Process">
-                      <div className="p-3 bg-white border-round">
-                        <h4 className="mt-0 mb-3 text-green-700">AI Processing Steps</h4>
-                        <ol className="m-0 pl-4">
-                          <li className="mb-3">
-                            <strong>Step 1: Detect Missing Values</strong>
-                            <div className="ml-3 mt-1 p-2 bg-blue-50 border-round">
-                              {Object.keys(cleaningReport.missing_values_before || {}).length > 0 ? (
-                                <ul className="m-0 pl-4">
-                                  {Object.entries(cleaningReport.missing_values_before || {})
-                                    .filter(([_, count]) => count > 0)
-                                    .map(([col, count]) => (
-                                    <li key={col}><strong>{col}</strong>: {count} missing values</li>
-                                  ))}
-                                </ul>
-                              ) : (
-                                <p className="m-0">No missing values found</p>
-                              )}
+                {cleaningReport.is_ecommerce_dataset && (
+                  <div className="p-3 mb-4 border-round shadow-2 bg-blue-50">
+                    <div className="flex align-items-center mb-2">
+                      <i className="pi pi-shopping-cart text-blue-700 mr-2" style={{ fontSize: '1.5rem' }}></i>
+                      <h3 className="m-0 text-blue-700">E-commerce Domain Detected</h3>
+                    </div>
+                    <p>Our LangChain agent detected this dataset is from the e-commerce domain and applied specialized data cleaning rules:</p>
+                    <ul className="mt-2 mb-2">
+                      <li>Price columns: Used median for imputation and capped outliers to preserve premium product data</li>
+                      <li>Quantity columns: Converted to integers and used mode imputation to maintain data integrity</li>
+                      <li>Date columns: Standardized formats and validated values</li>
+                      <li>ID columns: Ensured uniqueness and proper formatting</li>
+                    </ul>
+                  </div>
+                )}
+                
+                {cleaningReport.agent_suggestions && (
+                  <div className="p-3 mb-4 border-round shadow-2 bg-green-50">
+                    <div className="flex align-items-center mb-2">
+                      <i className="pi pi-bolt text-green-700 mr-2" style={{ fontSize: '1.5rem' }}></i>
+                      <h3 className="m-0 text-green-700">LangChain Agent Analysis</h3>
+                    </div>
+                    <p className="p-2 bg-white border-round">{cleaningReport.agent_suggestions}</p>
+                    
+                    {/* Add detailed AI thought process with expansion panel */}
+                    <div className="mt-3">
+                      <Accordion>
+                        <AccordionTab header="View AI Thought Process">
+                          <div className="p-3 bg-white border-round">
+                            <h4 className="mt-0 mb-3 text-green-700">AI Processing Steps</h4>
+                            <ol className="m-0 pl-4">
+                              <li className="mb-3">
+                                <strong>Step 1: Detect Missing Values</strong>
+                                <div className="ml-3 mt-1 p-2 bg-blue-50 border-round">
+                                  {Object.keys(cleaningReport.missing_values_before || {}).length > 0 ? (
+                                    <ul className="m-0 pl-4">
+                                      {Object.entries(cleaningReport.missing_values_before || {})
+                                        .filter(([_, count]) => count > 0)
+                                        .map(([col, count]) => (
+                                        <li key={col}><strong>{col}</strong>: {count} missing values</li>
+                                      ))}
+                                    </ul>
+                                  ) : (
+                                    <p className="m-0">No missing values found</p>
+                                  )}
+                                </div>
+                              </li>
+                              
+                              <li className="mb-3">
+                                <strong>Step 2: Detect Outliers</strong>
+                                <div className="ml-3 mt-1 p-2 bg-orange-50 border-round">
+                                  {Object.keys(cleaningReport.outliers_handled || {}).length > 0 ? (
+                                    <ul className="m-0 pl-4">
+                                      {Object.entries(cleaningReport.outliers_handled || {})
+                                        .map(([col, details]) => (
+                                        <li key={col}>
+                                          <strong>{col}</strong>: 
+                                          {typeof details === 'object' ? 
+                                            ` ${(details as any).count || 0} outliers detected using ${(details as any).method || 'unknown'} method` : 
+                                            ' No outliers detected'}
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  ) : (
+                                    <p className="m-0">No outliers detected</p>
+                                  )}
+                                </div>
+                              </li>
+                              
+                              <li className="mb-3">
+                                <strong>Step 3: Check for Duplicates</strong>
+                                <div className="ml-3 mt-1 p-2 bg-green-50 border-round">
+                                  {cleaningReport.duplicates_removed > 0 ? (
+                                    <p className="m-0">Found and removed {cleaningReport.duplicates_removed} duplicate rows</p>
+                                  ) : (
+                                    <p className="m-0">No duplicate rows found</p>
+                                  )}
+                                </div>
+                              </li>
+                            </ol>
+                          </div>
+                        </AccordionTab>
+                      </Accordion>
+                    </div>
+                  </div>
+                )}
+                
+                <div className="col-12 mb-4">
+                  <div className="p-4 border-round shadow-2 bg-primary-50 h-full">
+                    <h3 className="mt-0 mb-3 flex align-items-center">
+                      <i className="pi pi-check-circle text-primary mr-2"></i>
+                      Cleaning Summary
+                    </h3>
+                    
+                    <div className="p-3 bg-white border-round mb-3">
+                      <h4 className="mt-0 mb-2">Detected Issues</h4>
+                      <div className="grid">
+                        <div className="col-12 md:col-4">
+                          <div className="p-3 border-round bg-blue-50 mb-2">
+                            <div className="flex align-items-center justify-content-between">
+                              <div className="font-medium text-blue-800">Missing Values</div>
                             </div>
-                          </li>
-                          
-                          <li className="mb-3">
-                            <strong>Step 2: Detect Outliers</strong>
-                            <div className="ml-3 mt-1 p-2 bg-orange-50 border-round">
-                              {Object.keys(cleaningReport.outliers_handled || {}).length > 0 ? (
-                                <ul className="m-0 pl-4">
-                                  {Object.entries(cleaningReport.outliers_handled || {})
-                                    .map(([col, details]) => (
-                                    <li key={col}>
-                                      <strong>{col}</strong>: 
-                                      {typeof details === 'object' ? 
-                                        ` ${(details as any).count || 0} outliers detected using ${(details as any).method || 'unknown'} method` : 
-                                        ' No outliers detected'}
-                                    </li>
-                                  ))}
-                                </ul>
-                              ) : (
-                                <p className="m-0">No outliers detected</p>
-                              )}
+                            <div className="text-sm mt-2">
+                              {Object.entries(dataInfo.missing_values)
+                                .filter(([_, count]) => Number(count) > 0).length > 0 
+                                  ? `Found in ${Object.entries(dataInfo.missing_values)
+                                      .filter(([_, count]) => Number(count) > 0).length} columns` 
+                                  : 'No missing values detected'}
                             </div>
-                          </li>
-                          
-                          <li className="mb-3">
-                            <strong>Step 3: Check for Duplicates</strong>
-                            <div className="ml-3 mt-1 p-2 bg-green-50 border-round">
-                              {cleaningReport.duplicates_removed > 0 ? (
-                                <p className="m-0">Found and removed {cleaningReport.duplicates_removed} duplicate rows</p>
-                              ) : (
-                                <p className="m-0">No duplicate rows found</p>
-                              )}
+                          </div>
+                        </div>
+                        
+                        <div className="col-12 md:col-4">
+                          <div className="p-3 border-round bg-orange-50 mb-2">
+                            <div className="flex align-items-center justify-content-between">
+                              <div className="font-medium text-orange-800">Outliers</div>
                             </div>
-                          </li>
-                        </ol>
+                            <div className="text-sm mt-2">
+                              {Object.values(cleaningReport.outliers_handled || {}).some(
+                                v => typeof v === 'object' && (v as any).count > 0
+                              ) 
+                                ? `${Object.values(cleaningReport.outliers_handled || {})
+                                    .reduce((a, v) => a + (typeof v === 'object' ? (v as any).count || 0 : 0), 0)} values identified as outliers`
+                                : 'No outliers detected'}
+                            </div>
+                          </div>
+                        </div>
+                        
+                        <div className="col-12 md:col-4">
+                          <div className="p-3 border-round bg-green-50 mb-2">
+                            <div className="flex align-items-center justify-content-between">
+                              <div className="font-medium text-green-800">Duplicates</div>
+                            </div>
+                            <div className="text-sm mt-2">
+                              {cleaningReport.duplicates_removed > 0 
+                                ? `${cleaningReport.duplicates_removed} duplicate rows removed` 
+                                : 'No duplicate rows found'}
+                            </div>
+                          </div>
+                        </div>
                       </div>
-                    </AccordionTab>
-                  </Accordion>
+                    </div>
+                    
+                    <div className="p-3 bg-white border-round">
+                      <h4 className="mt-0 mb-2">Actions Performed</h4>
+                      <div className="text-sm">
+                        {(() => {
+                          // Create a safe reference to the audit log
+                          const auditLog = cleaningReport?.audit_log || [];
+                          return auditLog.length > 0 ? (
+                            <ul className="m-0 pl-4">
+                              {Array.from(new Set(auditLog.map(entry => entry.operation))).map(operation => (
+                                <li key={operation} className="mb-1">{operation}: 
+                                  <span className="ml-2 font-bold">
+                                    {auditLog.filter(entry => entry.operation === operation).length} actions
+                  </span>
+                              </li>
+                            ))}
+                            </ul>
+                          ) : (
+                            <div className="p-2 border-round bg-yellow-50">
+                              <i className="pi pi-exclamation-triangle mr-2 text-yellow-600"></i>
+                              <span className="text-yellow-600">No cleaning actions were performed. This may be due to an error with the AI recommendations.</span>
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    </div>
+                  </div>
                 </div>
-              </div>
-            )}
-            
-            <div className="col-12 mb-4">
-              <div className="p-4 border-round shadow-2 bg-primary-50 h-full">
-                <h3 className="mt-0 mb-3 flex align-items-center">
-                  <i className="pi pi-check-circle text-primary mr-2"></i>
-                  Cleaning Summary
-                </h3>
-                
-                <div className="p-3 bg-white border-round mb-3">
-                  <h4 className="mt-0 mb-2">Detected Issues</h4>
+              </TabPanel>
+              
+              <TabPanel header="Data Visualization">
+                <div className="p-4 border-round shadow-2 bg-primary-50 mb-4">
+                  <h3 className="mt-0 mb-3 text-primary">
+                    <i className="pi pi-chart-bar mr-2"></i>
+                    Data Visualization
+                  </h3>
+                  
                   <div className="grid">
-                    <div className="col-12 md:col-4">
-                      <div className="p-3 border-round bg-blue-50 mb-2">
-                        <div className="flex align-items-center justify-content-between">
-                          <div className="font-medium text-blue-800">Missing Values</div>
-                        </div>
-                        <div className="text-sm mt-2">
-                          {Object.entries(dataInfo.missing_values)
-                            .filter(([_, count]) => Number(count) > 0).length > 0 
-                              ? `Found in ${Object.entries(dataInfo.missing_values)
-                                  .filter(([_, count]) => Number(count) > 0).length} columns` 
-                              : 'No missing values detected'}
-                        </div>
+                    <div className="col-12 md:col-6 mb-4">
+                      <div className="p-3 bg-white border-round shadow-1">
+                        <h4 className="mt-0 mb-3">Missing Values by Column</h4>
+                        {renderMissingValuesChart()}
                       </div>
                     </div>
                     
-                    <div className="col-12 md:col-4">
-                      <div className="p-3 border-round bg-orange-50 mb-2">
-                        <div className="flex align-items-center justify-content-between">
-                          <div className="font-medium text-orange-800">Outliers</div>
-                        </div>
-                        <div className="text-sm mt-2">
-                          {Object.values(cleaningReport.outliers_handled || {}).some(
-                            v => typeof v === 'object' && (v as any).count > 0
-                          ) 
-                            ? `${Object.values(cleaningReport.outliers_handled || {})
-                                .reduce((a, v) => a + (typeof v === 'object' ? (v as any).count || 0 : 0), 0)} values identified as outliers`
-                            : 'No outliers detected'}
-                        </div>
+                    <div className="col-12 md:col-6 mb-4">
+                      <div className="p-3 bg-white border-round shadow-1">
+                        <h4 className="mt-0 mb-3">Outliers Detected</h4>
+                        {renderOutliersChart()}
                       </div>
                     </div>
                     
-                    <div className="col-12 md:col-4">
-                      <div className="p-3 border-round bg-green-50 mb-2">
-                        <div className="flex align-items-center justify-content-between">
-                          <div className="font-medium text-green-800">Duplicates</div>
-                        </div>
-                        <div className="text-sm mt-2">
-                          {cleaningReport.duplicates_removed > 0 
-                            ? `${cleaningReport.duplicates_removed} duplicate rows removed` 
-                            : 'No duplicate rows found'}
-                        </div>
+                    <div className="col-12 md:col-6 mb-4">
+                      <div className="p-3 bg-white border-round shadow-1">
+                        <h4 className="mt-0 mb-3">Rows Before vs After Cleaning</h4>
+                        {renderRowsComparisonChart()}
                       </div>
                     </div>
                   </div>
                 </div>
-                
-                <div className="p-3 bg-white border-round">
-                  <h4 className="mt-0 mb-2">Actions Performed</h4>
-                  <div className="text-sm">
-                    {(() => {
-                      // Create a safe reference to the audit log
-                      const auditLog = cleaningReport?.audit_log || [];
-                      return auditLog.length > 0 ? (
-                        <ul className="m-0 pl-4">
-                          {Array.from(new Set(auditLog.map(entry => entry.operation))).map(operation => (
-                            <li key={operation} className="mb-1">{operation}: 
-                              <span className="ml-2 font-bold">
-                                {auditLog.filter(entry => entry.operation === operation).length} actions
-                              </span>
-                            </li>
-                          ))}
-                        </ul>
-                      ) : (
-                        <div className="p-2 border-round bg-yellow-50">
-                          <i className="pi pi-exclamation-triangle mr-2 text-yellow-600"></i>
-                          <span className="text-yellow-600">No cleaning actions were performed. This may be due to an error with the AI recommendations.</span>
-                        </div>
-                      );
-                    })()}
+              </TabPanel>
+              
+              <TabPanel header="Audit Log">
+                <div className="p-4 border-round shadow-2 bg-primary-50 mb-4">
+                  <h3 className="mt-0 mb-3 text-primary">
+                    <i className="pi pi-history mr-2"></i>
+                    Data Cleaning Audit Log
+                  </h3>
+                  
+                  <div className="p-3 bg-white border-round">
+                    <div className="mb-3">
+                      <div className="flex justify-content-between align-items-center">
+                        <h4 className="m-0">Operations Performed</h4>
+                        <span style={{ color: 'black' }}>{cleaningReport?.audit_log?.length || 0} operations</span>
+                      </div>
+                    </div>
+                    
+                    <div className="p-datatable">
+                      <div className="p-datatable-wrapper" style={{maxHeight: '400px', overflowY: 'auto'}}>
+                        <table className="p-datatable-table">
+                          <thead className="p-datatable-thead">
+                            <tr>
+                              <th style={{width: '180px'}}>Timestamp</th>
+                              <th style={{width: '150px'}}>Operation</th>
+                              <th style={{width: '150px'}}>Column</th>
+                              <th>Details</th>
+                              <th style={{width: '120px'}}>Rows Affected</th>
+                            </tr>
+                          </thead>
+                          <tbody className="p-datatable-tbody">
+                            {cleaningReport?.audit_log?.map((entry, index) => (
+                              <tr key={index} className={index % 2 === 0 ? 'p-datatable-even' : 'p-datatable-odd'}>
+                                <td>{new Date(entry.timestamp).toLocaleString()}</td>
+                                <td>
+                                  <span className="p-tag p-tag-rounded" style={{
+                                    backgroundColor: getOperationColor(entry.operation)
+                                  }}>
+                                    {entry.operation}
+                                  </span>
+                                </td>
+                                <td>{entry.column || 'N/A'}</td>
+                                <td>
+                                  {entry.details && (
+                                    <div>
+                                      {entry.details.method && <div><strong>Method:</strong> {entry.details.method}</div>}
+                                      {entry.details.fill_value !== undefined && <div><strong>Fill value:</strong> {entry.details.fill_value}</div>}
+                                      {entry.details.reason && <div><strong>Reason:</strong> {entry.details.reason}</div>}
+                                      {entry.details.upper_cap !== undefined && <div><strong>Upper cap:</strong> {entry.details.upper_cap}</div>}
+                                      {entry.details.lower_cap !== undefined && <div><strong>Lower cap:</strong> {entry.details.lower_cap}</div>}
+                                    </div>
+                                  )}
+                                </td>
+                                <td>
+                                  {entry.rows_affected ? (
+                                    <span>{entry.rows_affected}</span>
+                                  ) : 'N/A'}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
                   </div>
                 </div>
-              </div>
-            </div>
+              </TabPanel>
+            </TabView>
           </div>
         ) : (
           <div className="flex justify-content-center">
@@ -711,6 +814,155 @@ export default function Home() {
         </div>
       </Card>
     );
+  };
+
+  // Helper function for the audit log
+  const getOperationColor = (operation) => {
+    const colorMap = {
+      'fill_missing_values': '#3B82F6', // blue
+      'cap_outliers': '#F59E0B',       // amber
+      'remove_duplicates': '#10B981',  // emerald
+      'value_transformation': '#8B5CF6', // violet
+      'remove_rows': '#EF4444'         // red
+    };
+    return colorMap[operation] || '#6B7280'; // gray as default
+  };
+
+  // Chart rendering functions
+  const renderMissingValuesChart = () => {
+    if (!cleaningReport || !dataInfo) return <p>No data available</p>;
+    
+    const missingValues = dataInfo.missing_values;
+    const columnsWithMissing = Object.entries(missingValues)
+      .filter(([_, count]) => Number(count) > 0)
+      .sort((a, b) => Number(b[1]) - Number(a[1])); // Sort by count (descending)
+    
+    if (columnsWithMissing.length === 0) return <p>No missing values detected</p>;
+    
+    const chartData = {
+      labels: columnsWithMissing.map(([col]) => col),
+      datasets: [
+        {
+          label: 'Missing Values',
+          data: columnsWithMissing.map(([_, count]) => Number(count)),
+          backgroundColor: 'rgba(255, 99, 132, 0.5)',
+          borderColor: 'rgb(255, 99, 132)',
+          borderWidth: 1
+        }
+      ]
+    };
+    
+    const options = {
+      scales: {
+        y: {
+          beginAtZero: true,
+          title: {
+            display: true,
+            text: 'Count'
+          }
+        },
+        x: {
+          title: {
+            display: true,
+            text: 'Column'
+          }
+        }
+      }
+    };
+    
+    return <Chart type="bar" data={chartData} options={options} />;
+  };
+
+  const renderOutliersChart = () => {
+    if (!cleaningReport || !cleaningReport.outliers_handled) return <p>No data available</p>;
+    
+    const outliers = cleaningReport.outliers_handled;
+    const columnsWithOutliers = Object.entries(outliers)
+      .filter(([_, details]) => typeof details === 'object' && (details as any).count > 0)
+      .map(([col, details]) => ({
+        column: col,
+        count: (details as any).count,
+        method: (details as any).method
+      }))
+      .sort((a, b) => b.count - a.count); // Sort by count (descending)
+    
+    if (columnsWithOutliers.length === 0) return <p>No outliers detected</p>;
+    
+    const chartData = {
+      labels: columnsWithOutliers.map(item => item.column),
+      datasets: [
+        {
+          label: 'Outliers Detected',
+          data: columnsWithOutliers.map(item => item.count),
+          backgroundColor: 'rgba(255, 159, 64, 0.5)',
+          borderColor: 'rgb(255, 159, 64)',
+          borderWidth: 1
+        }
+      ]
+    };
+    
+    const options = {
+      scales: {
+        y: {
+          beginAtZero: true,
+          title: {
+            display: true,
+            text: 'Count'
+          }
+        },
+        x: {
+          title: {
+            display: true,
+            text: 'Column'
+          }
+        }
+      }
+    };
+    
+    return <Chart type="bar" data={chartData} options={options} />;
+  };
+
+  const renderRowsComparisonChart = () => {
+    if (!cleaningReport) return <p>No data available</p>;
+    
+    const originalRows = cleaningReport.original_rows || 0;
+    const finalRows = cleaningReport.final_rows || 0;
+    const duplicatesRemoved = cleaningReport.duplicates_removed || 0;
+    
+    const chartData = {
+      labels: ['Original Rows', 'Duplicates Removed', 'Final Rows'],
+      datasets: [
+        {
+          label: 'Row Count',
+          data: [originalRows, duplicatesRemoved, finalRows],
+          backgroundColor: [
+            'rgba(54, 162, 235, 0.5)',
+            'rgba(255, 99, 132, 0.5)',
+            'rgba(75, 192, 192, 0.5)'
+          ],
+          borderColor: [
+            'rgb(54, 162, 235)',
+            'rgb(255, 99, 132)',
+            'rgb(75, 192, 192)'
+          ],
+          borderWidth: 1
+        }
+      ]
+    };
+    
+    const options = {
+      scales: {
+        y: {
+          beginAtZero: true,
+          title: {
+            display: true,
+            text: 'Count'
+          }
+        }
+      }
+    };
+    
+    return <Chart type="bar" data={chartData} options={options} />;
   };
 
   return (

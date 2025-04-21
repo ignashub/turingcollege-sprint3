@@ -475,6 +475,34 @@ def upload_file():
         app.logger.error(f"Error uploading file: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
+# Add this function to generate data distributions for visualization
+def generate_data_distribution(df, column):
+    """Generate distribution data for a numeric column"""
+    if df[column].dtype not in ['int64', 'float64']:
+        return None
+    
+    # Calculate basic statistics
+    stats = {
+        'min': df[column].min(),
+        'max': df[column].max(),
+        'mean': df[column].mean(),
+        'median': df[column].median(),
+        'std': df[column].std()
+    }
+    
+    # Generate histogram data
+    hist, bin_edges = np.histogram(df[column].dropna(), bins=10)
+    
+    distribution = {
+        'stats': stats,
+        'histogram': {
+            'counts': hist.tolist(),
+            'bin_edges': bin_edges.tolist()
+        }
+    }
+    
+    return distribution
+
 @app.route('/clean', methods=['POST'])
 def clean_data():
     try:
@@ -548,6 +576,35 @@ def clean_data():
             # Add agent suggestions to the report
             report['agent_suggestions'] = agent_suggestions
             
+            # Add distribution data for numeric columns
+            distributions = {}
+            numeric_columns = df.select_dtypes(include=['int64', 'float64']).columns
+            for column in numeric_columns[:5]:  # Limit to first 5 numeric columns for performance
+                distributions[column] = {
+                    'before': generate_data_distribution(df, column),
+                    'after': generate_data_distribution(cleaned_df, column)
+                }
+            
+            # Enhance the audit log with more details
+            for entry in report['audit_log']:
+                # Add timestamp if not present
+                if 'timestamp' not in entry:
+                    entry['timestamp'] = datetime.now().isoformat()
+                    
+                # Enhance details for different operations
+                if entry['operation'] == 'fill_missing_values' and 'details' in entry:
+                    if 'method' in entry['details']:
+                        method = entry['details']['method']
+                        if method == 'mean':
+                            entry['details']['description'] = f"Filled missing values in {entry['column']} with column mean"
+                        elif method == 'median':
+                            entry['details']['description'] = f"Filled missing values in {entry['column']} with column median"
+                        elif method == 'mode':
+                            entry['details']['description'] = f"Filled missing values in {entry['column']} with most frequent value"
+            
+            # Include distributions in the report
+            report['distributions'] = distributions
+            
         except Exception as ai_error:
             app.logger.error(f"All cleaning methods failed: {str(ai_error)}", exc_info=True)
             return jsonify({'error': f'Data cleaning failed: {str(ai_error)}'}), 500
@@ -593,12 +650,12 @@ def clean_data():
             # Add the audit log if it exists
             if 'audit_log' in report:
                 simplified_report['audit_log'] = report['audit_log']
-                
-            return jsonify({
-                'message': 'Data cleaned successfully',
+        
+        return jsonify({
+            'message': 'Data cleaned successfully',
                 'report': simplified_report,
-                'cleaned_filename': cleaned_filename
-            }), 200
+            'cleaned_filename': cleaned_filename
+        }), 200
         
     except Exception as e:
         app.logger.error(f"Error in clean_data: {str(e)}", exc_info=True)
