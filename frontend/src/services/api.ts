@@ -139,4 +139,22 @@ export const testConnection = async (): Promise<{status: string}> => {
     console.error('Backend connection failed:', error);
     throw error;
   }
+};
+
+/**
+ * Sets a custom OpenAI API key for the session
+ * @param apiKey The OpenAI API key to use
+ * @returns Promise with the operation status
+ */
+export const setApiKey = async (apiKey: string): Promise<{status: string}> => {
+  try {
+    const response = await apiClient.post('/set-api-key', {
+      api_key: apiKey
+    });
+    console.log('API key set successfully');
+    return response.data;
+  } catch (error) {
+    console.error('Error setting API key:', error);
+    throw error;
+  }
 }; 

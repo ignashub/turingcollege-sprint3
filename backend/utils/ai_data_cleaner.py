@@ -244,31 +244,47 @@ def apply_ecommerce_rules(df: pd.DataFrame, recommendations: DatasetRecommendati
 
 def get_ai_cleaning_recommendations(df: pd.DataFrame) -> DatasetRecommendation:
     """
-    Use LLM to generate data cleaning recommendations
+    Use LLM to generate cleaning recommendations for the dataset
     """
     try:
-        # Analyze dataframe
-        analysis = analyze_dataframe(df)
-        
-        # Detect if this is an e-commerce dataset
-        is_ecommerce = detect_ecommerce_domain(df)
-        
-        # Setup OpenAI client
+        # Check OpenAI API key
         openai_api_key = os.getenv("OPENAI_API_KEY")
         if not openai_api_key or openai_api_key == "empty-string":
-            raise ValueError("OpenAI API key not properly configured")
+            logger.warning("OpenAI API key not configured, using default recommendations")
+            return create_default_recommendations(df)
+            
+        # If dataset is too large, sample it
+        sample_df = df if len(df) < 1000 else df.sample(1000, random_state=42)
         
-        # Create LLM
-        llm = ChatOpenAI(
-            model="gpt-3.5-turbo-0125",
-            temperature=0,
-            api_key=openai_api_key
-        )
+        # Convert any potential problematic numeric types to Python native types
+        sample_info = {
+            'rows': int(len(df)),
+            'columns': int(len(df.columns)),
+            'column_names': df.columns.tolist(),
+            'sample_data': []
+        }
         
-        # Setup output parser
-        parser = PydanticOutputParser(pydantic_object=DatasetRecommendation)
+        # Handle different column types appropriately
+        for col in df.columns:
+            col_info = {
+                'name': col,
+                'dtype': str(df[col].dtype),
+                'missing_values': int(df[col].isnull().sum()),
+                'unique_values': int(df[col].nunique())
+            }
+            
+            # Add numeric stats if applicable
+            if np.issubdtype(df[col].dtype, np.number):
+                col_info.update({
+                    'min': float(df[col].min()) if not pd.isna(df[col].min()) else None,
+                    'max': float(df[col].max()) if not pd.isna(df[col].max()) else None,
+                    'mean': float(df[col].mean()) if not pd.isna(df[col].mean()) else None,
+                    'median': float(df[col].median()) if not pd.isna(df[col].median()) else None
+                })
+            
+            sample_info['sample_data'].append(col_info)
         
-        # Create prompt template with domain information if detected
+        # Define the prompt template for recommendations
         template = """
         You are an expert data scientist providing recommendations for cleaning a dataset.
         
@@ -277,7 +293,7 @@ def get_ai_cleaning_recommendations(df: pd.DataFrame) -> DatasetRecommendation:
         """
         
         # Add domain-specific context if detected
-        if is_ecommerce:
+        if detect_ecommerce_domain(df):
             template += """
             This appears to be an e-commerce dataset. When making recommendations, consider:
             1. Price columns should be positive and may need special outlier handling
@@ -296,6 +312,16 @@ def get_ai_cleaning_recommendations(df: pd.DataFrame) -> DatasetRecommendation:
         {format_instructions}
         """
         
+        # Setup OpenAI client
+        llm = ChatOpenAI(
+            model="gpt-3.5-turbo-0125",
+            temperature=0,
+            api_key=openai_api_key
+        )
+        
+        # Setup output parser BEFORE using it in the prompt
+        parser = PydanticOutputParser(pydantic_object=DatasetRecommendation)
+        
         prompt = PromptTemplate(
             template=template,
             input_variables=["analysis"],
@@ -304,13 +330,13 @@ def get_ai_cleaning_recommendations(df: pd.DataFrame) -> DatasetRecommendation:
         
         # Execute chain
         chain = LLMChain(llm=llm, prompt=prompt)
-        result = chain.run(analysis=json.dumps(analysis, indent=2))
+        result = chain.run(analysis=json.dumps(sample_info, indent=2))
         
         # Parse the output
         recommendations = parser.parse(result)
         
         # Apply domain-specific rules if e-commerce dataset detected
-        if is_ecommerce:
+        if detect_ecommerce_domain(df):
             recommendations = apply_ecommerce_rules(df, recommendations)
             
         return recommendations
@@ -321,25 +347,71 @@ def get_ai_cleaning_recommendations(df: pd.DataFrame) -> DatasetRecommendation:
         return create_default_recommendations(df)
 
 def create_default_recommendations(df: pd.DataFrame) -> DatasetRecommendation:
-    """Create default recommendations if AI recommendations fail"""
+    """Create default cleaning recommendations based on data characteristics"""
     column_recs = []
     
     for column in df.columns:
         # Get column data type
         data_type = str(df[column].dtype)
         
-        # Default missing values strategy
+        # Check if column has missing values
+        missing_count = df[column].isnull().sum()
+        has_missing = missing_count > 0
+        
+        # Default strategy - will be updated based on data type
         missing_values_strategy = {
             "method": "none",
-            "reason": "No AI recommendation available, defaulting to keep as is"
+            "reason": "No missing values detected" if not has_missing else "Default strategy based on data type"
         }
         
-        # Default outliers strategy
+        # Choose appropriate missing value strategy based on data type
+        if has_missing:
+            if np.issubdtype(df[column].dtype, np.number):
+                # For numeric columns, use median (more robust than mean)
+                missing_values_strategy = {
+                    "method": "median",
+                    "reason": "Median is robust to outliers and appropriate for numeric data"
+                }
+            else:
+                # For non-numeric columns, use mode (most common value)
+                missing_values_strategy = {
+                    "method": "mode",
+                    "reason": "Mode (most common value) is appropriate for categorical data"
+                }
+        
+        # Check for outliers in numeric columns
         outliers_strategy = {
             "method": "none",
             "action": "none",
-            "reason": "No AI recommendation available, defaulting to keep as is"
+            "reason": "Non-numeric column, no outlier detection needed"
         }
+        
+        if np.issubdtype(df[column].dtype, np.number) and len(df[column].dropna()) > 5:
+            # Detect outliers with Z-score
+            if df[column].std() > 0:  # Ensure non-zero standard deviation
+                z_scores = np.abs((df[column] - df[column].mean()) / df[column].std())
+                outliers = z_scores > 3
+                outlier_count = outliers.sum()
+                
+                if outlier_count > 0:
+                    outliers_strategy = {
+                        "method": "zscore",
+                        "action": "cap",  # Cap rather than remove to preserve data
+                        "reason": f"Detected {outlier_count} outliers using Z-score method"
+                    }
+        
+        # Value transformations if needed
+        value_transformations = []
+        
+        # Check for negative values in columns that should be positive
+        if np.issubdtype(df[column].dtype, np.number) and df[column].min() < 0:
+            # Check if column might represent price, quantity, or other typically positive value
+            col_lower = column.lower()
+            is_typically_positive = any(kw in col_lower for kw in 
+                                         ['price', 'cost', 'amount', 'quantity', 'stock', 'age', 'height', 'weight'])
+            
+            if is_typically_positive:
+                value_transformations.append("Ensure all values are positive")
         
         # Create recommendation for this column
         column_rec = DataCleaningRecommendation(
@@ -347,18 +419,21 @@ def create_default_recommendations(df: pd.DataFrame) -> DatasetRecommendation:
             data_type=data_type,
             missing_values=missing_values_strategy,
             outliers=outliers_strategy,
-            value_transformations=[],
-            column_importance=5,  # Middle importance
-            reasoning="Default recommendation due to AI recommendation failure"
+            value_transformations=value_transformations,
+            column_importance=8 if has_missing or outliers_strategy["method"] != "none" else 5,
+            reasoning=f"Generated recommendation based on data characteristics for column {column}"
         )
         
         column_recs.append(column_rec)
     
+    # Check for duplicates
+    duplicate_count = len(df) - len(df.drop_duplicates())
+    
     # Create dataset recommendation
     dataset_rec = DatasetRecommendation(
-        duplicate_removal=True if len(df) - len(df.drop_duplicates()) > 0 else False,
+        duplicate_removal=duplicate_count > 0,
         column_recommendations=column_recs,
-        overall_advice="Default cleaning suggestions. For better recommendations, ensure OpenAI API is properly configured."
+        overall_advice="Automatic cleaning recommendations based on data analysis. Missing values are handled using median for numeric columns and mode for categorical columns. Outliers are detected with Z-score and capped to maintain data integrity."
     )
     
     return dataset_rec
@@ -618,6 +693,23 @@ def apply_ai_recommendations(df: pd.DataFrame, recommendations: DatasetRecommend
                         rows_affected=negative_count
                     ).dict()
                 )
+            
+            # General transformations for typical positive values
+            if "Ensure all values are positive" in transformations:
+                negative_count = (cleaned_df[column] < 0).sum()
+                if negative_count > 0:
+                    cleaned_df.loc[cleaned_df[column] < 0, column] = abs(cleaned_df.loc[cleaned_df[column] < 0, column])
+                    
+                    # Log transformation
+                    audit_log.append(
+                        DataAuditLog(
+                            timestamp=datetime.now().isoformat(),
+                            operation="value_transformation",
+                            column=column,
+                            details={"transformation": "convert_negative_to_positive"},
+                            rows_affected=negative_count
+                        ).dict()
+                    )
                 
             if "Round to standard currency precision (2 decimal places)" in transformations:
                 cleaned_df[column] = cleaned_df[column].round(2)

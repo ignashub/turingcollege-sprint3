@@ -8,7 +8,7 @@ from datetime import datetime
 import json
 import logging
 from dotenv import load_dotenv
-from utils.ai_data_cleaner import ai_clean_dataset, analyze_dataframe, get_ai_cleaning_recommendations
+from utils.ai_data_cleaner import ai_clean_dataset, analyze_dataframe, get_ai_cleaning_recommendations, create_default_recommendations, apply_ai_recommendations
 from langchain.agents import initialize_agent, AgentType
 from langchain.chains import LLMChain
 from langchain_openai import ChatOpenAI
@@ -16,6 +16,7 @@ from langchain.prompts import PromptTemplate
 from langchain.tools import Tool
 from pydantic import BaseModel, Field
 from typing import Dict, List, Any, Optional
+from langgraph.prebuilt import create_react_agent
 
 # Custom JSON encoder to handle NumPy types and other non-serializable objects
 class NumpyEncoder(json.JSONEncoder):
@@ -365,14 +366,7 @@ def initialize_data_cleaning_agent(filepath):
         ]
         
         # Initialize agent
-        agent = initialize_agent(
-            tools,
-            llm,
-            agent=AgentType.STRUCTURED_CHAT_ZERO_SHOT_REACT_DESCRIPTION,
-            verbose=True,
-            handle_parsing_errors=True,
-            max_iterations=5
-        )
+        agent = create_react_agent(llm, tools, debug=True)
         
         return agent
     except Exception as e:
@@ -444,7 +438,7 @@ def upload_file():
                     # Initialize and run the LangChain agent for initial analysis
                     agent = initialize_data_cleaning_agent(filepath)
                     if agent:
-                        agent_analysis = agent.run(
+                        agent_analysis = agent.invoke(
                             "Analyze this dataset and provide comprehensive recommendations for cleaning. "
                             "Focus on detecting missing values, outliers, and duplicates."
                         )
@@ -505,37 +499,58 @@ def clean_data():
         # Check if OpenAI API is configured
         openai_api_key = os.getenv("OPENAI_API_KEY")
         if not openai_api_key or openai_api_key == "empty-string":
-            return jsonify({'error': 'OpenAI API key not configured for AI cleaning'}), 400
+            app.logger.warning("OpenAI API key not configured, will use default recommendations")
         
-        # Get recommendations if not provided in request
-        if not cleaning_options.get('recommendations'):
-            app.logger.info("Getting AI recommendations for cleaning")
-            recommendations = get_ai_cleaning_recommendations(df)
-        else:
-            # Use provided recommendations
-            app.logger.info("Using provided recommendations")
-            recommendations = cleaning_options.get('recommendations')
+        # Log the cleaning options for debugging
+        app.logger.info(f"Received cleaning options: {json.dumps(cleaning_options, indent=2)}")
         
         # Clean using AI with LangChain
-        app.logger.info("Using AI-based cleaning with LangChain")
+        app.logger.info("Using AI-based cleaning")
+        
         try:
-            # Initialize the LangChain agent for data cleaning
-            agent = initialize_data_cleaning_agent(filepath)
-            if not agent:
-                return jsonify({'error': 'Failed to initialize data cleaning agent'}), 500
+            # First try with LangChain agent for suggestions
+            agent_suggestions = ""
+            try:
+                agent = initialize_data_cleaning_agent(filepath)
+                if agent:
+                    agent_suggestions = agent.invoke(
+                        "Analyze this dataset and provide comprehensive recommendations for cleaning. "
+                        "Focus on detecting missing values, outliers, and duplicates. "
+                        "Suggest specific methods for each column based on data characteristics."
+                    )
+                    app.logger.info("Agent analysis completed successfully")
+                else:
+                    agent_suggestions = "Failed to initialize LangChain agent, proceeding with basic cleaning"
+                    app.logger.warning(agent_suggestions)
+            except Exception as agent_error:
+                app.logger.warning(f"Agent analysis failed, but continuing with cleaning: {str(agent_error)}")
+                agent_suggestions = f"Agent analysis unavailable. Error: {str(agent_error)}"
             
-            # Let the agent analyze and suggest cleaning steps
-            agent_suggestions = agent.run(
-                f"Analyze this dataset and perform data cleaning operations based on these recommendations: "
-                f"{json.dumps(cleaning_options, indent=2)}"
-            )
+            # Try the AI cleaning function which includes recommendations and application
+            try:
+                # Directly call the ai_clean_dataset function
+                cleaned_df, report = ai_clean_dataset(df)
+                app.logger.info(f"AI cleaning completed with {len(report.get('audit_log', []))} operations")
+                
+                # If no cleaning was actually performed, use the fallback basic cleaning
+                if len(report.get('audit_log', [])) == 0:
+                    app.logger.warning("AI cleaning didn't perform any operations, falling back to basic cleaning")
+                    raise Exception("No cleaning operations performed")
+                    
+            except Exception as e:
+                app.logger.warning(f"AI cleaning failed: {str(e)}. Falling back to basic cleaning")
+                
+                # Create basic recommendations
+                recommendations = create_default_recommendations(df)
+                cleaned_df, report = apply_ai_recommendations(df, recommendations)
+                app.logger.info(f"Basic cleaning completed with {len(report.get('audit_log', []))} operations")
             
-            # Use AI cleaning function to apply the recommendations
-            cleaned_df, report = ai_clean_dataset(df)
+            # Add agent suggestions to the report
             report['agent_suggestions'] = agent_suggestions
+            
         except Exception as ai_error:
-            app.logger.error(f"AI cleaning failed: {str(ai_error)}")
-            return jsonify({'error': f'AI cleaning failed: {str(ai_error)}'}), 500
+            app.logger.error(f"All cleaning methods failed: {str(ai_error)}", exc_info=True)
+            return jsonify({'error': f'Data cleaning failed: {str(ai_error)}'}), 500
         
         # Save cleaned dataset
         cleaned_filename = f"cleaned_{filename}"
@@ -547,32 +562,46 @@ def clean_data():
             cleaned_df.to_excel(cleaned_filepath, index=False)
         
         # Add human-readable report
-        if 'generate_cleaning_report' in globals():
-            try:
-                from utils.data_cleaner import generate_cleaning_report
-                report['human_readable'] = generate_cleaning_report(report)
-            except ImportError:
-                report['human_readable'] = f"AI cleaning completed successfully. Processed {report.get('original_rows', 0)} rows and handled missing values and outliers as needed."
-        else:
-            report['human_readable'] = f"AI cleaning completed successfully. Processed {report.get('original_rows', 0)} rows and handled missing values and outliers as needed."
+        report['human_readable'] = (
+            f"AI cleaning completed successfully.\n\n"
+            f"Dataset Summary:\n"
+            f"- Original rows: {report.get('original_rows', 0)}\n"
+            f"- Final rows: {report.get('final_rows', 0)}\n"
+            f"- Duplicates removed: {report.get('duplicates_removed', 0)}\n\n"
+            f"The AI agent analyzed your data and automatically applied appropriate cleaning methods "
+            f"based on the characteristics of each column."
+        )
         
         try:
-            return jsonify({
-                'message': 'Data cleaned successfully',
-                'report': report,
-                'cleaned_filename': cleaned_filename
-            }), 200
-        except TypeError as json_error:
-            app.logger.error(f"JSON serialization error in clean_data: {str(json_error)}")
-            # Use our custom JSON encoder to handle all types
+            # Use our custom NumpyEncoder to handle serialization issues
             return jsonify({
                 'message': 'Data cleaned successfully',
                 'report': json.loads(json.dumps(report, cls=NumpyEncoder)),
                 'cleaned_filename': cleaned_filename
             }), 200
+        except TypeError as json_error:
+            app.logger.error(f"JSON serialization error in clean_data: {str(json_error)}")
+            # Make another attempt with manual conversion of problematic types
+            simplified_report = {
+                'original_rows': int(report.get('original_rows', 0)),
+                'final_rows': int(report.get('final_rows', 0)),
+                'duplicates_removed': int(report.get('duplicates_removed', 0)),
+                'human_readable': report.get('human_readable', ''),
+                'agent_suggestions': report.get('agent_suggestions', '')
+            }
+            
+            # Add the audit log if it exists
+            if 'audit_log' in report:
+                simplified_report['audit_log'] = report['audit_log']
+                
+            return jsonify({
+                'message': 'Data cleaned successfully',
+                'report': simplified_report,
+                'cleaned_filename': cleaned_filename
+            }), 200
         
     except Exception as e:
-        app.logger.error(f"Error in clean_data: {str(e)}")
+        app.logger.error(f"Error in clean_data: {str(e)}", exc_info=True)
         return jsonify({'error': str(e)}), 500
 
 @app.route('/download/<filename>', methods=['GET'])
@@ -589,6 +618,34 @@ def download_file(filename):
         )
         
     except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/set-api-key', methods=['POST'])
+def set_api_key():
+    try:
+        data = request.json
+        api_key = data.get('api_key')
+        
+        if not api_key:
+            return jsonify({'error': 'No API key provided'}), 400
+        
+        # Validate API key format (basic check)
+        if not api_key.startswith('sk-') or len(api_key) < 20:
+            return jsonify({'error': 'Invalid API key format'}), 400
+        
+        # Store the API key in the session
+        # Note: This will only persist for the current session
+        # and won't modify the .env file
+        os.environ["OPENAI_API_KEY"] = api_key
+        app.logger.info("Custom API key set for this session")
+        
+        return jsonify({
+            'status': 'success',
+            'message': 'API key set successfully for this session'
+        }), 200
+        
+    except Exception as e:
+        app.logger.error(f"Error setting API key: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':

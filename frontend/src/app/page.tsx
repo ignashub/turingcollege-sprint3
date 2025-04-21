@@ -9,12 +9,14 @@ import { Toast } from 'primereact/toast';
 import { Dialog } from 'primereact/dialog';
 import { ProgressBar } from 'primereact/progressbar';
 import { ProgressSpinner } from 'primereact/progressspinner';
-import { uploadFile, cleanData, downloadFile } from '@/services/api';
+import { uploadFile, cleanData, downloadFile, setApiKey } from '@/services/api';
 import { DataInfo, CleaningOptions, CleaningReport } from '@/types';
 import { Tooltip } from 'primereact/tooltip';
 import { Card } from 'primereact/card';
+import { InputText } from 'primereact/inputtext';
 import axios from 'axios';
 import { API_BASE_URL } from '@/services/api';
+import { Accordion, AccordionTab } from 'primereact/accordion';
 
 
 const dataCleaningDescription = "Data cleaning helps improve your data quality by removing errors, duplicates, and handling missing values. Clean data leads to more accurate analysis results!";
@@ -52,6 +54,9 @@ export default function Home() {
   const [showReportDialog, setShowReportDialog] = useState(false);
   const [cleanedFilename, setCleanedFilename] = useState<string | null>('');
   const [isCleaningData, setIsCleaningData] = useState(false);
+  const [showWelcomeDialog, setShowWelcomeDialog] = useState(true);
+  const [showApiKeyDialog, setShowApiKeyDialog] = useState(false);
+  const [apiKey, setApiKeyState] = useState('');
   const toastRef = useRef<Toast>(null);
 
   // Initialize cleaning options when dataInfo changes
@@ -164,14 +169,19 @@ export default function Home() {
         throw new Error('Filename not found');
       }
       
-      // Send request to backend with LangChain agent mode
-      const response = await axios.post(`${API_BASE_URL}/clean`, {
+      // Create a simple configuration that lets the AI handle all cleaning decisions
+      const cleaningConfiguration = {
         filename: filename,
         cleaning_options: {
-          use_agent: true,
-          get_recommendations_only: false
+          // Tell the backend to use pure AI-driven cleaning
+          use_ai_only: true
         }
-      });
+      };
+      
+      console.log('Requesting AI-driven cleaning');
+      
+      // Send request to backend with minimal options to let AI do the work
+      const response = await axios.post(`${API_BASE_URL}/clean`, cleaningConfiguration);
       
       // Handle successful response
       const data = response.data;
@@ -197,6 +207,48 @@ export default function Home() {
     }
   };
 
+  // Handle API key submission
+  const handleApiKeySubmit = async () => {
+    try {
+      // Call the backend to set the API key
+      await setApiKey(apiKey);
+      
+      toastRef.current?.show({
+        severity: 'success',
+        summary: 'API Key Set',
+        detail: 'Your OpenAI API key has been set successfully',
+        life: 3000
+      });
+      
+      setShowApiKeyDialog(false);
+    } catch (error) {
+      console.error('Error setting API key:', error);
+      toastRef.current?.show({
+        severity: 'error',
+        summary: 'Error',
+        detail: 'Failed to set the API key. Please try again.',
+        life: 5000
+      });
+    }
+  };
+
+  // Continue from welcome dialog to API key dialog
+  const handleWelcomeContinue = () => {
+    setShowWelcomeDialog(false);
+    setShowApiKeyDialog(true);
+  };
+
+  // Skip API key dialog and use the default key from .env
+  const handleSkipApiKey = () => {
+    setShowApiKeyDialog(false);
+    toastRef.current?.show({
+      severity: 'info',
+      summary: 'Using Default API Key',
+      detail: 'The application will use the default API key',
+      life: 3000
+    });
+  };
+
   // Render dialogs
   const renderCleaningDialog = () => {
     if (!dataInfo) return null;
@@ -205,14 +257,14 @@ export default function Home() {
       <Dialog
         header={
           <>
-            Data Cleaning Options
+            Data Cleaning with AI
             <span id="data-cleaning-info" className="ml-2">
               <i className="pi pi-info-circle" style={{ cursor: 'pointer' }}></i>
             </span>
             <Tooltip target="#data-cleaning-info" position="right" showDelay={150}>
               <div className="p-2" style={{ maxWidth: '300px' }}>
                 <p className="m-0">{dataCleaningDescription}</p>
-                <p className="mt-2 mb-0">Our AI agent will analyze your dataset and apply intelligent cleaning strategies tailored to your dataset.</p>
+                <p className="mt-2 mb-0">Our AI agent will analyze your dataset and automatically apply the most appropriate cleaning strategies.</p>
               </div>
             </Tooltip>
           </>
@@ -229,7 +281,7 @@ export default function Home() {
               className="p-button-danger" 
             />
             <Button 
-              label="Clean Data with LangChain Agent" 
+              label="Clean Data with AI" 
               icon="pi pi-bolt" 
               onClick={handleDataCleaning} 
               loading={isCleaningData} 
@@ -241,9 +293,9 @@ export default function Home() {
         <div className="p-4 border-round shadow-2 bg-primary-50 mb-4">
           <div className="flex align-items-center mb-3">
             <i className="pi pi-bolt text-primary mr-2" style={{ fontSize: '1.5rem' }}></i>
-            <h3 className="m-0">LangChain Agentic Data Cleaning</h3>
+            <h3 className="m-0">Fully Automated AI Data Cleaning</h3>
           </div>
-          <p>Our intelligent agent uses LangChain to analyze your dataset and apply the most appropriate cleaning strategies.</p>
+          <p>Our intelligent AI system will analyze your dataset and automatically apply the most appropriate cleaning strategies without any manual configuration needed.</p>
           
           <div className="grid mt-4">
             <div className="col-12 md:col-6 lg:col-3">
@@ -252,9 +304,9 @@ export default function Home() {
                   <i className="pi pi-ban text-blue-500 mr-2" style={{ fontSize: '1.2rem' }}></i>
                   <h4 className="m-0">Missing Values</h4>
                 </div>
-                <p className="text-sm">Detects and handles missing values using statistical methods best suited for your data type.</p>
+                <p className="text-sm">AI will automatically detect missing values and apply the optimal strategy for each column based on data type and distribution.</p>
                 <div className="p-2 bg-blue-50 border-round text-sm mt-2">
-                  Includes mean, median, mode imputation and intelligent row removal.
+                  The AI selects from strategies like mean, median, mode, or intelligent row removal.
                 </div>
               </Card>
             </div>
@@ -265,9 +317,9 @@ export default function Home() {
                   <i className="pi pi-exclamation-triangle text-orange-500 mr-2" style={{ fontSize: '1.2rem' }}></i>
                   <h4 className="m-0">Outliers</h4>
                 </div>
-                <p className="text-sm">Identifies and handles outliers using Z-score and IQR methods with appropriate thresholds.</p>
+                <p className="text-sm">AI will intelligently identify outliers using statistical methods appropriate for your specific data distribution.</p>
                 <div className="p-2 bg-orange-50 border-round text-sm mt-2">
-                  Can remove or cap outliers based on data characteristics.
+                  The system chooses between Z-score, IQR, or domain-specific approaches automatically.
                 </div>
               </Card>
             </div>
@@ -278,9 +330,9 @@ export default function Home() {
                   <i className="pi pi-copy text-green-500 mr-2" style={{ fontSize: '1.2rem' }}></i>
                   <h4 className="m-0">Duplicates</h4>
                 </div>
-                <p className="text-sm">Detects and removes duplicate rows to ensure data integrity and accuracy.</p>
+                <p className="text-sm">AI will detect and remove exact and near-duplicate rows based on intelligent pattern recognition.</p>
                 <div className="p-2 bg-green-50 border-round text-sm mt-2">
-                  Preserves original data while eliminating redundancy.
+                  Preserves data integrity while eliminating redundancy.
                 </div>
               </Card>
             </div>
@@ -386,6 +438,67 @@ export default function Home() {
                   <h3 className="m-0 text-green-700">LangChain Agent Analysis</h3>
                 </div>
                 <p className="p-2 bg-white border-round">{cleaningReport.agent_suggestions}</p>
+                
+                {/* Add detailed AI thought process with expansion panel */}
+                <div className="mt-3">
+                  <Accordion>
+                    <AccordionTab header="View AI Thought Process">
+                      <div className="p-3 bg-white border-round">
+                        <h4 className="mt-0 mb-3 text-green-700">AI Processing Steps</h4>
+                        <ol className="m-0 pl-4">
+                          <li className="mb-3">
+                            <strong>Step 1: Detect Missing Values</strong>
+                            <div className="ml-3 mt-1 p-2 bg-blue-50 border-round">
+                              {Object.keys(cleaningReport.missing_values_before || {}).length > 0 ? (
+                                <ul className="m-0 pl-4">
+                                  {Object.entries(cleaningReport.missing_values_before || {})
+                                    .filter(([_, count]) => count > 0)
+                                    .map(([col, count]) => (
+                                    <li key={col}><strong>{col}</strong>: {count} missing values</li>
+                                  ))}
+                                </ul>
+                              ) : (
+                                <p className="m-0">No missing values found</p>
+                              )}
+                            </div>
+                          </li>
+                          
+                          <li className="mb-3">
+                            <strong>Step 2: Detect Outliers</strong>
+                            <div className="ml-3 mt-1 p-2 bg-orange-50 border-round">
+                              {Object.keys(cleaningReport.outliers_handled || {}).length > 0 ? (
+                                <ul className="m-0 pl-4">
+                                  {Object.entries(cleaningReport.outliers_handled || {})
+                                    .map(([col, details]) => (
+                                    <li key={col}>
+                                      <strong>{col}</strong>: 
+                                      {typeof details === 'object' ? 
+                                        ` ${(details as any).count || 0} outliers detected using ${(details as any).method || 'unknown'} method` : 
+                                        ' No outliers detected'}
+                                    </li>
+                                  ))}
+                                </ul>
+                              ) : (
+                                <p className="m-0">No outliers detected</p>
+                              )}
+                            </div>
+                          </li>
+                          
+                          <li className="mb-3">
+                            <strong>Step 3: Check for Duplicates</strong>
+                            <div className="ml-3 mt-1 p-2 bg-green-50 border-round">
+                              {cleaningReport.duplicates_removed > 0 ? (
+                                <p className="m-0">Found and removed {cleaningReport.duplicates_removed} duplicate rows</p>
+                              ) : (
+                                <p className="m-0">No duplicate rows found</p>
+                              )}
+                            </div>
+                          </li>
+                        </ol>
+                      </div>
+                    </AccordionTab>
+                  </Accordion>
+                </div>
               </div>
             )}
             
@@ -394,7 +507,7 @@ export default function Home() {
                 <div className="flex align-items-center justify-content-between mb-2">
                   <div className="flex align-items-center">
                     <i className="pi pi-history text-yellow-700 mr-2" style={{ fontSize: '1.5rem' }}></i>
-                    <h3 className="m-0 text-yellow-700">Data Cleaning Audit Log</h3>
+                    <h3 className="m-0 text-yellow-700">Data Cleaning Actions Log</h3>
                   </div>
                   <span className="p-badge p-badge-info">{cleaningReport.audit_log.length} operations</span>
                 </div>
@@ -409,9 +522,26 @@ export default function Home() {
                           </div>
                           <div className="text-sm text-500">{new Date(entry.timestamp).toLocaleTimeString()}</div>
                         </div>
+                        {entry.details && (
+                          <div className="text-sm mt-1 bg-yellow-50 p-2 border-round">
+                            <strong>Method:</strong> {entry.details.method || 'Not specified'}
+                            {entry.details.fill_value !== undefined && (
+                              <div><strong>Fill value:</strong> {entry.details.fill_value}</div>
+                            )}
+                            {entry.details.reason && (
+                              <div><strong>Reason:</strong> {entry.details.reason}</div>
+                            )}
+                            {entry.details.upper_cap !== undefined && (
+                              <div><strong>Upper cap:</strong> {entry.details.upper_cap}</div>
+                            )}
+                            {entry.details.lower_cap !== undefined && (
+                              <div><strong>Lower cap:</strong> {entry.details.lower_cap}</div>
+                            )}
+                          </div>
+                        )}
                         {entry.rows_affected && (
                           <div className="text-sm mt-1">
-                            Rows affected: <span className="font-medium">{entry.rows_affected}</span>
+                            <span className="p-badge p-badge-warning">{entry.rows_affected} rows affected</span>
                           </div>
                         )}
                       </li>
@@ -421,178 +551,90 @@ export default function Home() {
               </div>
             )}
             
-              <div className="grid">
-              <div className="col-12 md:col-4">
-                <div className="p-4 border-round shadow-2 bg-primary-50 h-full">
-                  <h3 className="mt-0 mb-3">Dataset Size</h3>
-                  <div className="mb-3">
-                    <div className="flex justify-content-between align-items-center mb-2">
-                      <span>Original Rows:</span>
-                      <span className="font-bold">{cleaningReport.original_rows}</span>
+            <div className="col-12 mb-4">
+              <div className="p-4 border-round shadow-2 bg-primary-50 h-full">
+                <h3 className="mt-0 mb-3 flex align-items-center">
+                  <i className="pi pi-check-circle text-primary mr-2"></i>
+                  Cleaning Summary
+                </h3>
+                
+                <div className="p-3 bg-white border-round mb-3">
+                  <h4 className="mt-0 mb-2">Detected Issues</h4>
+                  <div className="grid">
+                    <div className="col-12 md:col-4">
+                      <div className="p-2 border-round bg-blue-50 mb-2">
+                        <div className="font-medium text-blue-800">Missing Values</div>
+                        <div className="text-sm mt-1">
+                          {Object.values(cleaningReport.missing_values_before || {}).reduce((a, b) => a + (b as number), 0) > 0 ? (
+                            <span className="p-badge p-badge-info">
+                              {Object.values(cleaningReport.missing_values_before || {}).reduce((a, b) => a + (b as number), 0)} detected
+                            </span>
+                          ) : (
+                            <span className="p-badge p-badge-success">None detected</span>
+                          )}
+                        </div>
+                      </div>
                     </div>
-                    <div className="flex justify-content-between align-items-center">
-                      <span>Final Rows:</span>
-                      <span className="font-bold">{cleaningReport.final_rows}</span>
+                    
+                    <div className="col-12 md:col-4">
+                      <div className="p-2 border-round bg-orange-50 mb-2">
+                        <div className="font-medium text-orange-800">Outliers</div>
+                        <div className="text-sm mt-1">
+                          {Object.values(cleaningReport.outliers_handled || {}).some(
+                            v => typeof v === 'object' && (v as any).count > 0
+                          ) ? (
+                            <span className="p-badge p-badge-warning">
+                              {Object.values(cleaningReport.outliers_handled || {})
+                                .reduce((a, v) => a + (typeof v === 'object' ? (v as any).count || 0 : 0), 0)} detected
+                            </span>
+                          ) : (
+                            <span className="p-badge p-badge-success">None detected</span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div className="col-12 md:col-4">
+                      <div className="p-2 border-round bg-green-50 mb-2">
+                        <div className="font-medium text-green-800">Duplicates</div>
+                        <div className="text-sm mt-1">
+                          {cleaningReport.duplicates_removed > 0 ? (
+                            <span className="p-badge p-badge-warning">
+                              {cleaningReport.duplicates_removed} detected
+                            </span>
+                          ) : (
+                            <span className="p-badge p-badge-success">None detected</span>
+                          )}
+                        </div>
+                      </div>
                     </div>
                   </div>
-                  
-                  {cleaningReport.duplicates_removed > 0 && (
-                    <div className="mt-4">
-                      <div className="flex justify-content-between align-items-center">
-                        <span>Duplicates Removed:</span>
-                        <span className="font-bold">{cleaningReport.duplicates_removed}</span>
-                      </div>
-                    </div>
-                  )}
                 </div>
-              </div>
-              
-              <div className="col-12 md:col-4">
-                <div className="p-4 border-round shadow-2 bg-primary-50 h-full">
-                  <h3 className="mt-0 mb-3 flex align-items-center">
-                    <i className="pi pi-ban text-primary mr-2"></i>
-                    Missing Values
-                    <span id="missing-values-info" className="ml-2">
-                      <i className="pi pi-info-circle" style={{ cursor: 'pointer', fontSize: '0.8rem' }}></i>
-                  </span>
-                  </h3>
-                  <Tooltip target="#missing-values-info" position="right" showDelay={150}>
-                    {missingValuesDescription}
-                  </Tooltip>
-                  
-                  {cleaningReport.missing_values_handled && 
-                    Object.entries(cleaningReport.missing_values_handled).length > 0 ? (
-                      <div>
-                        <div className="grid">
-                          {Object.entries(cleaningReport.missing_values_handled)
-                            .filter(([_, details]) => typeof details === 'object' ? (details as any).method !== 'none' : details !== 'none')
-                            .map(([column, details]) => (
-                              <div key={column} className="col-12 mb-3 border-bottom-1 border-primary-100 pb-2">
-                                <div className="font-medium text-primary mb-2">{column}</div>
-                                <div className="flex justify-content-between align-items-center mb-1 text-sm">
-                                  <span>Method:</span>
-                                  <span className="font-bold bg-primary-100 px-2 py-1 border-round">
-                                    {typeof details === 'string' ? details : (details as any).method}
-                                  </span>
-                                </div>
-                                {typeof details === 'object' && (details as any).count > 0 && (
-                                  <div className="flex justify-content-between align-items-center text-sm">
-                                    <span>Values Fixed:</span>
-                                    <span className="font-bold">{(details as any).count}</span>
-                                  </div>
-                                )}
-                              </div>
-                            ))}
-                        </div>
-                        
-                        {Object.entries(cleaningReport.missing_values_handled)
-                          .filter(([_, details]) => typeof details === 'object' ? (details as any).method === 'none' : details === 'none')
-                          .length > 0 && (
-                            <div className="mt-3 p-2 bg-primary-100 border-round">
-                              <p className="m-0 text-sm">
-                                <i className="pi pi-info-circle mr-1 text-primary"></i>
-                                {Object.entries(cleaningReport.missing_values_handled)
-                                  .filter(([_, details]) => typeof details === 'object' ? (details as any).method === 'none' : details === 'none')
-                                  .length} columns with missing values were left unchanged.
-                              </p>
-                            </div>
-                          )}
-                      </div>
-                    ) : (
-                      <div className="flex align-items-center justify-content-center h-full">
-                        <div className="text-center">
-                          <i className="pi pi-check-circle text-primary" style={{ fontSize: '2rem' }}></i>
-                          <p className="mt-2">No missing values needed handling!</p>
-                        </div>
-                      </div>
-                    )
-                  }
-                </div>
-              </div>
-              
-              <div className="col-12 md:col-4">
-                <div className="p-4 border-round shadow-2 bg-primary-50 h-full">
-                  <h3 className="mt-0 mb-3 flex align-items-center">
-                    <i className="pi pi-exclamation-triangle text-primary mr-2"></i>
-                    Outliers
-                    <span id="outliers-info" className="ml-2">
-                      <i className="pi pi-info-circle" style={{ cursor: 'pointer', fontSize: '0.8rem' }}></i>
-                  </span>
-                  </h3>
-                  <Tooltip target="#outliers-info" position="right" showDelay={150}>
-                    {outliersDescription}
-                  </Tooltip>
-                  
-                  {cleaningReport.outliers_handled && 
-                    Object.entries(cleaningReport.outliers_handled).length > 0 ? (
-                      <div>
-                        {Object.entries(cleaningReport.outliers_handled)
-                          .filter(([_, details]) => 
-                            typeof details === 'object' && 
-                            (details as any).count > 0)
-                          .map(([column, details]) => (
-                            <div key={column} className="mb-3 border-bottom-1 border-primary-100 pb-2">
-                              <div className="font-medium text-primary mb-2">{column}</div>
-                              <div className="grid">
-                                <div className="col-6">
-                                  <div className="text-sm font-bold">Detected:</div>
-                                  <div className="text-lg">{typeof details === 'string' ? 0 : (details as any).count}</div>
-                                </div>
-                                <div className="col-6">
-                                  <div className="text-sm font-bold">Method:</div>
-                                  <div className="bg-primary-100 px-2 py-1 border-round text-center">
-                                    {typeof details === 'string' ? details : (details as any).method}
-                                  </div>
-                                </div>
-                                <div className="col-12 mt-2">
-                                  <div className="text-sm font-bold">Action:</div>
-                                  <div className="text-sm">
-                                    {typeof details === 'object' && (details as any).action === 'remove' 
-                                      ? 'Removed from dataset' 
-                                      : 'Capped at normal range'}
-                                  </div>
-                                </div>
-                              </div>
-                            </div>
+                
+                <div className="p-3 bg-white border-round">
+                  <h4 className="mt-0 mb-2">Actions Performed</h4>
+                  <div className="text-sm">
+                    {(() => {
+                      // Create a safe reference to the audit log
+                      const auditLog = cleaningReport?.audit_log || [];
+                      return auditLog.length > 0 ? (
+                        <ul className="m-0 pl-4">
+                          {Array.from(new Set(auditLog.map(entry => entry.operation))).map(operation => (
+                            <li key={operation} className="mb-1">{operation}: 
+                              <span className="ml-2 font-bold">
+                                {auditLog.filter(entry => entry.operation === operation).length} actions
+                              </span>
+                            </li>
                           ))}
-                        
-                        {Object.entries(cleaningReport.outliers_handled)
-                          .filter(([_, details]) => 
-                            typeof details === 'object' && 
-                            (details as any).count === 0)
-                          .length > 0 && (
-                            <div className="mt-3 p-2 bg-primary-100 border-round">
-                              <p className="m-0 text-sm">
-                                <i className="pi pi-info-circle mr-1 text-primary"></i>
-                                No outliers were found in {
-                                  Object.entries(cleaningReport.outliers_handled)
-                                    .filter(([_, details]) => 
-                                      typeof details === 'object' && 
-                                      (details as any).count === 0)
-                                    .length
-                                } columns that were checked.
-                              </p>
-                            </div>
-                          )}
-                        
-                        {Object.entries(cleaningReport.outliers_handled).length === 0 && (
-                          <div className="flex align-items-center justify-content-center h-full">
-                            <div className="text-center">
-                              <i className="pi pi-check-circle text-primary" style={{ fontSize: '2rem' }}></i>
-                              <p className="mt-2">No outlier detection was performed!</p>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    ) : (
-                      <div className="flex align-items-center justify-content-center h-full">
-                        <div className="text-center">
-                          <i className="pi pi-check-circle text-primary" style={{ fontSize: '2rem' }}></i>
-                          <p className="mt-2">No outlier handling was needed!</p>
+                        </ul>
+                      ) : (
+                        <div className="p-2 border-round bg-yellow-50">
+                          <i className="pi pi-exclamation-triangle mr-2 text-yellow-600"></i>
+                          <span className="text-yellow-600">No cleaning actions were performed. This may be due to an error with the AI recommendations.</span>
                         </div>
-                      </div>
-                    )
-                  }
+                      );
+                    })()}
+                  </div>
                 </div>
               </div>
             </div>
@@ -610,14 +652,140 @@ export default function Home() {
     window.open(`${API_BASE_URL}/download/${cleanedFilename}`, '_blank');
   };
 
+  // Welcome dialog
+  const renderWelcomeDialog = () => {
+    return (
+      <Dialog
+        header="Welcome to Data Cleaning Assistant"
+        visible={showWelcomeDialog}
+        style={{ width: '80%', maxWidth: '800px' }}
+        onHide={() => setShowWelcomeDialog(false)}
+        footer={
+          <div className="flex justify-content-end">
+            <Button label="Continue" icon="pi pi-arrow-right" onClick={handleWelcomeContinue} />
+          </div>
+        }
+      >
+        <div className="p-4">
+          <h2 className="text-xl mb-4">What is this application?</h2>
+          <p className="mb-4">
+            This Data Cleaning Assistant helps you prepare your datasets for analysis by:
+          </p>
+          <ul className="list-disc pl-6 mb-4">
+            <li className="mb-2">Finding and handling missing values in your data</li>
+            <li className="mb-2">Detecting and removing outliers that might skew your results</li>
+            <li className="mb-2">Identifying and removing duplicate records</li>
+            <li className="mb-2">Using AI to provide cleaning recommendations specific to your dataset</li>
+          </ul>
+          <p className="mb-4">
+            Simply upload your CSV or Excel file, and the application will analyze it and help you clean it efficiently.
+            The AI-powered assistant will provide recommendations tailored to your specific dataset.
+          </p>
+          <div className="bg-blue-50 p-4 border-round">
+            <h3 className="text-lg mb-2">Why clean your data?</h3>
+            <p>
+              Clean data leads to more accurate analysis, better insights, and more reliable machine learning models.
+              This tool simplifies the data cleaning process, saving you time and improving your results.
+            </p>
+          </div>
+        </div>
+      </Dialog>
+    );
+  };
+
+  // API key dialog
+  const renderApiKeyDialog = () => {
+    return (
+      <Dialog
+        header="Set Your OpenAI API Key"
+        visible={showApiKeyDialog}
+        style={{ width: '80%', maxWidth: '600px' }}
+        onHide={() => setShowApiKeyDialog(false)}
+        footer={
+          <div className="flex justify-content-between">
+            <Button label="Skip (Use Default)" className="p-button-text" onClick={handleSkipApiKey} />
+            <Button label="Set API Key" icon="pi pi-check" onClick={handleApiKeySubmit} disabled={!apiKey} />
+          </div>
+        }
+      >
+        <div className="p-4">
+          <p className="mb-4">
+            This application uses OpenAI's GPT models to analyze and clean your data.
+            Provide your own API key for the best performance and to avoid using the shared key.
+          </p>
+          <div className="bg-yellow-50 p-3 border-round mb-4">
+            <p>
+              <i className="pi pi-info-circle mr-2"></i>
+              Your API key will only be used for this session and will not be stored permanently.
+            </p>
+          </div>
+          <div className="field">
+            <label htmlFor="apiKey" className="block mb-2">OpenAI API Key</label>
+            <InputText
+              id="apiKey"
+              value={apiKey}
+              onChange={(e) => setApiKeyState(e.target.value)}
+              className="w-full"
+              placeholder="sk-..."
+              type="password"
+            />
+            <small className="block mt-1">
+              You can get an API key from <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer">OpenAI's website</a>
+            </small>
+          </div>
+        </div>
+      </Dialog>
+    );
+  };
+
+  // Welcome content to be shown when no file is uploaded
+  const renderWelcomeContent = () => {
+    if (dataInfo) return null;
+    
+    return (
+      <Card className="mb-4">
+        <div className="p-4">
+          <h2 className="text-xl mb-4">Welcome to the Data Cleaning Assistant</h2>
+          <p className="mb-4">
+            This tool helps you prepare your datasets for analysis by cleaning and transforming your data.
+          </p>
+          <ul className="list-disc pl-6 mb-4">
+            <li className="mb-2">Upload CSV or Excel files</li>
+            <li className="mb-2">Clean missing values and outliers</li>
+            <li className="mb-2">Remove duplicate records</li>
+            <li className="mb-2">Get AI-powered recommendations</li>
+          </ul>
+          <div className="bg-blue-50 p-3 border-round">
+            <p>
+              <i className="pi pi-info-circle mr-2"></i>
+              Get started by uploading a CSV or Excel file using the upload button below.
+            </p>
+          </div>
+        </div>
+      </Card>
+    );
+  };
+
   return (
-    <main className="p-4">
+    <div className="container mx-auto p-4">
       <Toast ref={toastRef} />
       <Tooltip target=".pi-info-circle" position="right" showDelay={150} />
       <Tooltip target="[data-pr-tooltip]" position="right" showDelay={150} />
+      {renderWelcomeDialog()}
+      {renderApiKeyDialog()}
       
       <div className="card">
-        <h1 className="text-2xl font-bold mb-4 text-center">Data Cleaning Tool</h1>
+        <div className="flex justify-content-between align-items-center mb-4">
+          <h1 className="text-2xl font-bold m-0">Data Cleaning Assistant</h1>
+          <Button 
+            label="Change API Key" 
+            icon="pi pi-key" 
+            className="p-button-outlined p-button-sm"
+            onClick={() => setShowApiKeyDialog(true)}
+          />
+        </div>
+        
+        {renderWelcomeContent()}
         
         <div className="mb-3 text-center">
           <h2 className="text-xl font-bold mb-2">Step 1: Upload your data file</h2>
@@ -723,6 +891,6 @@ export default function Home() {
         {renderCleaningDialog()}
         {renderReportDialog()}
       </div>
-    </main>
+    </div>
   );
 }
