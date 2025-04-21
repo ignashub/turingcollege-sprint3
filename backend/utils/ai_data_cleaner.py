@@ -11,6 +11,7 @@ from langchain.output_parsers import PydanticOutputParser
 from pydantic import BaseModel, Field
 import logging
 from datetime import datetime
+from langchain_core.messages import HumanMessage
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -464,7 +465,144 @@ def apply_ai_recommendations(df: pd.DataFrame, recommendations: DatasetRecommend
     # Handle duplicates if recommended
     if recommendations.duplicate_removal:
         duplicates_before = len(cleaned_df)
-        cleaned_df = cleaned_df.drop_duplicates()
+        
+        try:
+            # Try to use LangChain for intelligent duplicate identification
+            openai_api_key = os.getenv("OPENAI_API_KEY")
+            if openai_api_key and openai_api_key != "empty-string":
+                # Initialize the LLM
+                llm = ChatOpenAI(
+                    model="gpt-3.5-turbo-0125",
+                    temperature=0,
+                    api_key=openai_api_key
+                )
+                
+                # Create a sample of the dataframe for analysis
+                sample_size = min(10, len(cleaned_df))
+                df_sample = cleaned_df.sample(sample_size) if sample_size > 0 else cleaned_df
+                
+                # Create a description of the dataframe
+                column_descriptions = []
+                for col in cleaned_df.columns:
+                    col_type = str(cleaned_df[col].dtype)
+                    unique_ratio = cleaned_df[col].nunique() / len(cleaned_df) if len(cleaned_df) > 0 else 0
+                    column_descriptions.append(f"- {col} (type: {col_type}, uniqueness: {unique_ratio:.2f})")
+                    
+                column_info = "\n".join(column_descriptions)
+                    
+                # Create the prompt for the LLM
+                prompt_text = f"""
+                You are an expert data scientist analyzing a dataset to find the best columns for identifying duplicate records.
+                Here are the columns in the dataset with their data types and uniqueness ratio (number of unique values / total rows):
+                
+                {column_info}
+                
+                Based on this information, identify which columns should be used together to detect duplicate records.
+                Focus on columns that might represent unique identifiers, names, emails, or other fields that would be the same when a record is duplicated.
+                
+                Return your answer as a comma-separated list of column names, for example: "customer_id, email_address"
+                If no columns are suitable, respond with "all_columns".
+                ONLY return the comma-separated list, no explanations.
+                """
+                
+                # Get the LLM's response
+                response = llm.invoke([HumanMessage(content=prompt_text)])
+                response_text = response.content.strip()
+                
+                # Parse the response to get the columns
+                if response_text.lower() == "all_columns":
+                    duplicate_subset = None  # Use all columns
+                    used_columns = ["all columns"]
+                else:
+                    # Split by comma and strip whitespace
+                    suggested_columns = [col.strip() for col in response_text.split(',')]
+                    # Filter to only include columns that exist in the dataframe
+                    duplicate_subset = [col for col in suggested_columns if col in cleaned_df.columns]
+                    used_columns = duplicate_subset if duplicate_subset else ["all columns"]
+                
+                # Log what the AI suggested
+                logger.info(f"AI suggested using these columns for duplicate detection: {response_text}")
+                
+                # If the AI didn't find suitable columns, fall back to the scoring method
+                if not duplicate_subset:
+                    logger.info("Falling back to scoring method for duplicate detection")
+                    raise Exception("LLM didn't return usable column names")
+            else:
+                # No API key, fall back to the scoring method
+                raise Exception("OpenAI API key not configured or invalid")
+                
+        except Exception as e:
+            logger.warning(f"Error using LLM for duplicate detection: {str(e)}. Falling back to manual scoring.")
+            
+            # Fall back to the scoring-based method (retain this as a backup)
+            potential_id_columns = []
+            
+            # Step 1: Analyze each column for uniqueness and naming patterns
+            for col in cleaned_df.columns:
+                col_lower = col.lower()
+                uniqueness_ratio = cleaned_df[col].nunique() / len(cleaned_df) if len(cleaned_df) > 0 else 0
+                
+                # High uniqueness suggests an identifier (but not 100% unique)
+                is_likely_identifier = 0.5 < uniqueness_ratio < 1.0
+                
+                # Common identifier patterns in column names
+                common_id_patterns = ['id', 'code', 'key', 'num', 'number']
+                name_patterns = ['name', 'user', 'customer', 'client', 'person']
+                contact_patterns = ['email', 'mail', 'phone', 'contact']
+                
+                # Score the column based on name and uniqueness
+                score = 0
+                
+                # Column appears to be an ID field by name
+                if any(pattern in col_lower for pattern in common_id_patterns):
+                    score += 5
+                
+                # Column appears to be a name field
+                if any(pattern in col_lower for pattern in name_patterns):
+                    score += 3
+                
+                # Column appears to be a contact field
+                if any(pattern in col_lower for pattern in contact_patterns):
+                    score += 4
+                    
+                # Has good uniqueness but not perfect (perfect might be primary key)
+                if is_likely_identifier:
+                    score += 3
+                elif uniqueness_ratio == 1.0:  # Perfect uniqueness - likely primary key
+                    score += 6
+                elif uniqueness_ratio > 0.8:   # Very high uniqueness
+                    score += 4
+                
+                if score > 0:
+                    potential_id_columns.append((col, score))
+            
+            # Sort columns by score in descending order
+            potential_id_columns.sort(key=lambda x: x[1], reverse=True)
+            
+            # Step 2: Decide on which columns to use for duplicate detection
+            duplicate_subset = None
+            used_columns = []
+            
+            if potential_id_columns:
+                # If we have clear identifier columns, use them
+                high_score_columns = [col for col, score in potential_id_columns if score >= 5]
+                if high_score_columns:
+                    duplicate_subset = high_score_columns
+                    used_columns = high_score_columns
+                else:
+                    # Use top 2-3 scoring columns if available
+                    top_columns = [col for col, _ in potential_id_columns[:min(3, len(potential_id_columns))]]
+                    duplicate_subset = top_columns
+                    used_columns = top_columns
+        
+        # Drop duplicates based on chosen subset
+        if duplicate_subset:
+            cleaned_df = cleaned_df.drop_duplicates(subset=duplicate_subset, keep='first')
+        else:
+            # Fall back to all columns if no clear identifiers found
+            cleaned_df = cleaned_df.drop_duplicates(keep='first')
+            used_columns = ["all columns"]
+        
         duplicates_removed = duplicates_before - len(cleaned_df)
         report['duplicates_removed'] = duplicates_removed
         
@@ -474,7 +612,11 @@ def apply_ai_recommendations(df: pd.DataFrame, recommendations: DatasetRecommend
                 timestamp=datetime.now().isoformat(),
                 operation="remove_duplicates",
                 column=None,
-                details={"method": "exact_match"},
+                details={
+                    "method": "ai_powered_duplicate_detection", 
+                    "columns_used": used_columns,
+                    "duplicates_found": duplicates_removed
+                },
                 rows_affected=duplicates_removed
             ).dict()
         )

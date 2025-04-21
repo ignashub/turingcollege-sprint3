@@ -390,7 +390,7 @@ export default function Home() {
         onHide={() => setShowReportDialog(false)}
         footer={
           <div className="flex justify-content-end gap-2">
-            <Button label="Close" icon="pi pi-times" onClick={() => setShowReportDialog(false)} className="p-button-text" />
+            <Button label="Close" icon="pi pi-times" onClick={() => setShowReportDialog(false)} className="p-button-danger" />
             {cleanedFilename && (
               <Button label="Download Cleaned Data" icon="pi pi-download" onClick={handleDownloadCleanedData} className="p-button-success" />
             )}
@@ -502,55 +502,6 @@ export default function Home() {
               </div>
             )}
             
-            {cleaningReport.audit_log && cleaningReport.audit_log.length > 0 && (
-              <div className="p-3 mb-4 border-round shadow-2 bg-yellow-50">
-                <div className="flex align-items-center justify-content-between mb-2">
-                  <div className="flex align-items-center">
-                    <i className="pi pi-history text-yellow-700 mr-2" style={{ fontSize: '1.5rem' }}></i>
-                    <h3 className="m-0 text-yellow-700">Data Cleaning Actions Log</h3>
-                  </div>
-                  <span className="p-badge p-badge-info">{cleaningReport.audit_log.length} operations</span>
-                </div>
-                <div className="p-2 bg-white border-round" style={{ maxHeight: '300px', overflowY: 'auto' }}>
-                  <ul className="list-none p-0 m-0">
-                    {cleaningReport.audit_log.map((entry, index) => (
-                      <li key={index} className="p-2 mb-1 border-bottom-1 border-300">
-                        <div className="flex align-items-center justify-content-between">
-                          <div>
-                            <span className="font-medium">{entry.operation}</span>
-                            {entry.column && <span className="ml-2 text-500">on column: <span className="text-primary">{entry.column}</span></span>}
-                          </div>
-                          <div className="text-sm text-500">{new Date(entry.timestamp).toLocaleTimeString()}</div>
-                        </div>
-                        {entry.details && (
-                          <div className="text-sm mt-1 bg-yellow-50 p-2 border-round">
-                            <strong>Method:</strong> {entry.details.method || 'Not specified'}
-                            {entry.details.fill_value !== undefined && (
-                              <div><strong>Fill value:</strong> {entry.details.fill_value}</div>
-                            )}
-                            {entry.details.reason && (
-                              <div><strong>Reason:</strong> {entry.details.reason}</div>
-                            )}
-                            {entry.details.upper_cap !== undefined && (
-                              <div><strong>Upper cap:</strong> {entry.details.upper_cap}</div>
-                            )}
-                            {entry.details.lower_cap !== undefined && (
-                              <div><strong>Lower cap:</strong> {entry.details.lower_cap}</div>
-                            )}
-                          </div>
-                        )}
-                        {entry.rows_affected && (
-                          <div className="text-sm mt-1">
-                            <span className="p-badge p-badge-warning">{entry.rows_affected} rows affected</span>
-                          </div>
-                        )}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              </div>
-            )}
-            
             <div className="col-12 mb-4">
               <div className="p-4 border-round shadow-2 bg-primary-50 h-full">
                 <h3 className="mt-0 mb-3 flex align-items-center">
@@ -562,49 +513,45 @@ export default function Home() {
                   <h4 className="mt-0 mb-2">Detected Issues</h4>
                   <div className="grid">
                     <div className="col-12 md:col-4">
-                      <div className="p-2 border-round bg-blue-50 mb-2">
-                        <div className="font-medium text-blue-800">Missing Values</div>
-                        <div className="text-sm mt-1">
-                          {Object.values(cleaningReport.missing_values_before || {}).reduce((a, b) => a + (b as number), 0) > 0 ? (
-                            <span className="p-badge p-badge-info">
-                              {Object.values(cleaningReport.missing_values_before || {}).reduce((a, b) => a + (b as number), 0)} detected
-                            </span>
-                          ) : (
-                            <span className="p-badge p-badge-success">None detected</span>
-                          )}
+                      <div className="p-3 border-round bg-blue-50 mb-2">
+                        <div className="flex align-items-center justify-content-between">
+                          <div className="font-medium text-blue-800">Missing Values</div>
+                        </div>
+                        <div className="text-sm mt-2">
+                          {Object.entries(dataInfo.missing_values)
+                            .filter(([_, count]) => Number(count) > 0).length > 0 
+                              ? `Found in ${Object.entries(dataInfo.missing_values)
+                                  .filter(([_, count]) => Number(count) > 0).length} columns` 
+                              : 'No missing values detected'}
                         </div>
                       </div>
                     </div>
                     
                     <div className="col-12 md:col-4">
-                      <div className="p-2 border-round bg-orange-50 mb-2">
-                        <div className="font-medium text-orange-800">Outliers</div>
-                        <div className="text-sm mt-1">
+                      <div className="p-3 border-round bg-orange-50 mb-2">
+                        <div className="flex align-items-center justify-content-between">
+                          <div className="font-medium text-orange-800">Outliers</div>
+                        </div>
+                        <div className="text-sm mt-2">
                           {Object.values(cleaningReport.outliers_handled || {}).some(
                             v => typeof v === 'object' && (v as any).count > 0
-                          ) ? (
-                            <span className="p-badge p-badge-warning">
-                              {Object.values(cleaningReport.outliers_handled || {})
-                                .reduce((a, v) => a + (typeof v === 'object' ? (v as any).count || 0 : 0), 0)} detected
-                            </span>
-                          ) : (
-                            <span className="p-badge p-badge-success">None detected</span>
-                          )}
+                          ) 
+                            ? `${Object.values(cleaningReport.outliers_handled || {})
+                                .reduce((a, v) => a + (typeof v === 'object' ? (v as any).count || 0 : 0), 0)} values identified as outliers`
+                            : 'No outliers detected'}
                         </div>
                       </div>
                     </div>
                     
                     <div className="col-12 md:col-4">
-                      <div className="p-2 border-round bg-green-50 mb-2">
-                        <div className="font-medium text-green-800">Duplicates</div>
-                        <div className="text-sm mt-1">
-                          {cleaningReport.duplicates_removed > 0 ? (
-                            <span className="p-badge p-badge-warning">
-                              {cleaningReport.duplicates_removed} detected
-                            </span>
-                          ) : (
-                            <span className="p-badge p-badge-success">None detected</span>
-                          )}
+                      <div className="p-3 border-round bg-green-50 mb-2">
+                        <div className="flex align-items-center justify-content-between">
+                          <div className="font-medium text-green-800">Duplicates</div>
+                        </div>
+                        <div className="text-sm mt-2">
+                          {cleaningReport.duplicates_removed > 0 
+                            ? `${cleaningReport.duplicates_removed} duplicate rows removed` 
+                            : 'No duplicate rows found'}
                         </div>
                       </div>
                     </div>
@@ -638,11 +585,11 @@ export default function Home() {
                 </div>
               </div>
             </div>
-        </div>
+          </div>
         ) : (
           <div className="flex justify-content-center">
             <ProgressSpinner style={{ width: '50px', height: '50px' }} />
-        </div>
+          </div>
         )}
       </Dialog>
     );
@@ -823,51 +770,6 @@ export default function Home() {
               />
             </div>
             
-            <div className="grid">
-              <div className="col-12 md:col-6 lg:col-3">
-                <div className="p-4 border-round shadow-2 bg-primary-50">
-                  <div className="flex align-items-center mb-2">
-                    <i className="pi pi-table text-primary mr-2" style={{ fontSize: '1.5rem' }}></i>
-                    <h3 className="text-lg font-semibold m-0 text-primary">Rows</h3>
-              </div>
-                  <p className="text-2xl font-bold m-0">{dataInfo.rows}</p>
-                </div>
-              </div>
-              
-              <div className="col-12 md:col-6 lg:col-3">
-                <div className="p-4 border-round shadow-2 bg-primary-50">
-                  <div className="flex align-items-center mb-2">
-                    <i className="pi pi-list text-primary mr-2" style={{ fontSize: '1.5rem' }}></i>
-                    <h3 className="text-lg font-semibold m-0 text-primary">Columns</h3>
-                  </div>
-                  <p className="text-2xl font-bold m-0">{dataInfo.columns}</p>
-                </div>
-              </div>
-              
-              <div className="col-12 lg:col-6">
-                <div className="p-4 border-round shadow-2 bg-primary-50 h-full">
-                  <div className="flex align-items-center mb-2">
-                    <i className="pi pi-exclamation-circle text-primary mr-2" style={{ fontSize: '1.5rem' }}></i>
-                    <h3 className="text-lg font-semibold m-0 text-primary">Missing Values</h3>
-                  </div>
-                  {Object.keys(dataInfo.missing_values).length > 0 ? (
-                    <div className="grid">
-                  {Object.entries(dataInfo.missing_values).map(([column, count]) => (
-                        <div key={column} className="col-6 md:col-4">
-                          <div className="flex align-items-center">
-                            <span className="font-medium">{column}:</span>
-                            <span className="ml-2 px-2 py-1 bg-primary border-round text-white text-sm">{count}</span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="m-0">No missing values found</p>
-                  )}
-                </div>
-              </div>
-            </div>
-
             <DataTable 
               value={data} 
               className="mt-3 shadow-2" 
