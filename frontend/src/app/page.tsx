@@ -515,7 +515,7 @@ export default function Home() {
                     
                     <div className="p-3 bg-white border-round mb-3">
                       <h4 className="mt-0 mb-2">Detected Issues</h4>
-                      <div className="grid">
+              <div className="grid">
                         <div className="col-12 md:col-4">
                           <div className="p-3 border-round bg-blue-50 mb-2">
                             <div className="flex align-items-center justify-content-between">
@@ -635,8 +635,8 @@ export default function Home() {
                       <div className="flex justify-content-between align-items-center">
                         <h4 className="m-0">Operations Performed</h4>
                         <span style={{ color: 'black' }}>{cleaningReport?.audit_log?.length || 0} operations</span>
-                      </div>
-                    </div>
+              </div>
+            </div>
                     
                     <div className="p-datatable">
                       <div className="p-datatable-wrapper" style={{maxHeight: '400px', overflowY: 'auto'}}>

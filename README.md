@@ -33,6 +33,7 @@ A full-stack web application for automated data cleaning and analysis, built wit
 - Interactive data table view
 - Download cleaned datasets
 - Data cleaning summary reports
+- Web interface for OpenAI API key setup
 
 ## Agentic Data Cleaning
 
@@ -85,15 +86,44 @@ The agentic components are primarily implemented in the backend using:
    pip install -r requirements.txt
    ```
 
-4. Set up OpenAI API key:
+4. Start the Flask server:
+   ```bash
+   python app.py
+   ```
+
+## OpenAI API Key Setup
+
+You can set up your OpenAI API key in two ways:
+
+1. **Through the web interface** (Recommended):
+   - After launching the application, click on the "Settings" button
+   - Enter your OpenAI API key in the provided field
+   - Click "Save" to store the API key for the current session
+
+2. **Using environment variables**:
    ```bash
    export OPENAI_API_KEY=your_api_key_here  # On Windows: set OPENAI_API_KEY=your_api_key_here
    ```
 
-5. Start the Flask server:
-   ```bash
-   python app.py
-   ```
+## Testing the Application
+
+The repository includes a sample e-commerce dataset for testing purposes:
+
+1. Launch the application (both frontend and backend)
+2. Upload the `ecomm_data.csv` file from the root directory
+3. The application should automatically detect it as an e-commerce dataset
+4. You can experiment with:
+   - Viewing the AI recommendations 
+   - Running automated data cleaning
+   - Visualizing the data before and after cleaning
+   - Downloading the cleaned dataset
+
+The sample dataset includes common data issues like:
+- Missing values
+- Duplicated records
+- Outlier values
+- Negative numbers in fields that should be positive
+- Age values outside reasonable ranges
 
 ## Technologies Used
 
@@ -129,7 +159,7 @@ This project uses environment variables for configuration. To set up:
 
 2. Edit the `.env` file and add your actual values:
    ```
-   # Required for OpenAI-based features
+   # Optional: OpenAI API key can also be set through the web interface
    OPENAI_API_KEY=your-openai-api-key-here
    
    # Additional security (change in production)

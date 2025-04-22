@@ -696,8 +696,8 @@ def set_api_key():
         os.environ["OPENAI_API_KEY"] = api_key
         app.logger.info("Custom API key set for this session")
         
-        return jsonify({
-            'status': 'success',
+    return jsonify({
+        'status': 'success',
             'message': 'API key set successfully for this session'
         }), 200
         

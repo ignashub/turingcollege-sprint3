@@ -1,0 +1,21 @@
+customer_id,name,email,age,purchase_amount,purchase_date,category,loyalty_points
+1001,John Smith,john.smith@email.com,32.0,125.99,2023-05-15,Electronics,250
+1002,Emily Johnson,emily.j@email.com,,89.5,2023-05-16,Clothing,175
+1003,Michael Brown,michael@email.com,45.0,210.75,2023-05-17,Home & Garden,320
+1004,Sarah Davis,sarah.davis@email.com,29.0,,2023-05-18,Electronics,190
+1005,David Wilson,,51.0,139.99,2023-05-19,Books,245
+1006,Jennifer Lee,jen.lee@email.com,37.0,95.25,,Clothing,210
+1007,John Smith,john.smith@email.com,32.0,125.99,2023-05-15,Electronics,250
+1008,Robert Taylor,robert@email.com,42.0,3500.0,2023-05-20,Electronics,410
+1009,Lisa Anderson,lisa.a@email.com,33.0,115.5,2023-05-21,Clothing,225
+1010,,karen.white@email.com,38.0,142.75,2023-05-22,Home & Garden,270
+1011,James Miller,james.m@email.com,-5.0,118.0,2023-05-23,Books,200
+1012,Patricia Moore,patty@email.com,36.0,129.99,2023-05-24,Electronics,255
+1013,Thomas Martin,thomas.m@email.com,41.0,105.25,2023-05-25,Clothing,195
+1014,Jessica Thompson,jessica.t@email.com,31.0,160.5,2023-05-26,Home & Garden,290
+1015,Christopher Garcia,chris.g@email.com,39.0,-45.99,2023-05-27,Books,235
+1016,Amanda Rodriguez,amanda.r@email.com,34.0,145.75,2023-05-28,Electronics,275
+1017,Joshua Martinez,josh.m@email.com,900.0,135.5,2023-05-29,Clothing,260
+1018,Melissa Hernandez,melissa.h@email.com,35.0,195.25,2023-05-30,Home & Garden,320
+1019,Andrew Robinson,andrew.r@email.com,44.0,128.99,2023-05-31,Books,240
+1020,Stephanie Lewis,steph.l@email.com,40.0,,2023-06-01,Electronics,265
