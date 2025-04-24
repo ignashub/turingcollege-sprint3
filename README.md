@@ -232,7 +232,7 @@ After the main functionality is implemented and your code works correctly, and y
 
 Caution: Some of the tasks in medium or hard categories may contain tasks with concepts or libraries that may be introduced in later sections or even require outside knowledge/time to research outside of the course.
 
-Easy:
+## Easy:
 
 Ask ChatGPT to critique your solution from the usability, security, and prompt-engineering sides.
 Give the agent a personality—tweak responses to make them more formal, friendly, or concise based on user needs.
@@ -240,7 +240,9 @@ Provide the user with the ability to choose from a list of LLMs (Gemini, OpenAI,
 Add all of the OpenAI settings (temperature, top-5 frequency) for the user to tune as sliders/fields.
 Add a feature to allow users to preview the dataset before and after cleaning.
 Add an interactive help feature or chatbot guide.
-Medium:
+
+
+## Medium:
 
 Calculate and display token usage and costs.
 Add retry logic for agents.
@@ -251,7 +253,8 @@ Implement a caching mechanism to store and retrieve frequently used responses.
 Implement a feedback loop where users can rate the responses, and use this feedback to improve the agent's performance.
 Implement 2 extra function tools (5 in total). Have a UI for the user to either enable or disable these function tools. Develop a plugin system that allows users to add or remove functionalities from the chatbot dynamically.
 Implement multi-model support (OpenAI, Anthropic, etc.).
-Hard:
+
+## Hard:
 
 Agentic RAG: Think of a way to add RAG functionality to the LangChain/LangGraph application and implement it.
 
